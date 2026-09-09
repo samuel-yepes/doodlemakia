@@ -464,7 +464,7 @@ function updateFocus(dt) {
 }
 
 // ---------------- free for all: spawning, death, scoring ----------------
-const HOW = { rifle: 'Fusil', shotgun: 'Escopeta', sniper: 'Francotirador', katana: 'Katana', grenade: 'Granada', deflect: 'su propia bala' };
+const HOW = { rifle: 'Fusil', shotgun: 'Escopeta', sniper: 'Francotirador', smg: 'Subfusil', revolver: 'Revólver', launcher: 'Lanzagranadas', katana: 'Espada de Energía', grenade: 'Granada', deflect: 'su propia bala' };
 const howWord = (src) => HOW[src] || null;
 const spawnSpots = () => (level.arenaSpawns && level.arenaSpawns.length ? level.arenaSpawns : level.spawns);
 function arenaSpawn() {
@@ -1274,7 +1274,7 @@ function step(now) {
   hud.setSlots(player.weapons.map((wp, i) => ({ name: wp.name, active: i === player.weaponIndex, ammo: wp.isGun ? wp.mag + '/' + wp.reserve : '∞', empty: wp.isGun && wp.mag === 0 && wp.reserve === 0 })));
   hud.setGrenades(player.grenades); hud.setGrappleStamina(player.grapStam); hud.setHealth(player.hp, player.maxHp); hud.setSpread(w.spreadPx); hud.update(dt);
   if (online()) hud.setFocusMeter(playing, player.grapStam, false, 'Gancho');
-  else hud.setFocusMeter(playing && (w.kind === 'katana' || game.katanaStreak > 0 || game.focus.active), game.focus.active ? 1 : clamp(game.katanaStreak / KATANA_CHARGE_KILLS, 0, 1), game.focus.active, 'Katana');
+  else hud.setFocusMeter(playing && (w.kind === 'katana' || game.katanaStreak > 0 || game.focus.active), game.focus.active ? 1 : clamp(game.katanaStreak / KATANA_CHARGE_KILLS, 0, 1), game.focus.active, 'Espada');
   if (online() && playing) hud.updateNametags(remote, R.camera, world, player);
   else hud.clearNametags();
   if (game.boss) { if (game.boss.alive) hud.setBoss(game.boss.T.name, game.boss.hp / game.boss.maxHp); else { hud.setBoss(null, null); game.boss = null; } }

@@ -68,9 +68,32 @@ function buildHat(headG, mat, solid, T) {
 }
 export function buildWeaponProp(gun, mat, solid, T) {
   if (T.weapon === 'blade' || T.weapon === 'katana') {
-    bx(0.02, 0.05, 0.95, 0, 0.04, 0.42, mat, gun);
-    bx(0.11, 0.11, 0.03, 0, 0.04, -0.06, solid, gun);
-    bx(0.035, 0.045, 0.24, 0, 0.04, -0.19, mat, gun);
+    const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.14, 8), solid);
+    hilt.rotation.z = Math.PI / 2;
+    hilt.position.set(0, 0.02, 0.0);
+    gun.add(hilt);
+    sph(0.024, -0.07, 0.02, 0.0, solid, gun);
+    sph(0.024, 0.07, 0.02, 0.0, solid, gun);
+    bx(0.07, 0.035, 0.04, 0, 0.02, 0.02, solid, gun);
+
+    const s = new THREE.Shape();
+    s.moveTo(0.05, 0.0);
+    s.lineTo(0.12, 0.12);
+    s.quadraticCurveTo(0.08, 0.32, 0.075, 0.46);
+    s.quadraticCurveTo(0.055, 0.62, 0.014, 0.82);
+    s.lineTo(0.01, 0.82);
+    s.lineTo(0.01, 0.22);
+    s.quadraticCurveTo(0.015, 0.08, 0.05, 0.0);
+
+    const propGeo = new THREE.ExtrudeGeometry(s, { depth: 0.012, bevelEnabled: false });
+    propGeo.rotateX(Math.PI / 2);
+    propGeo.translate(0, 0.02, 0.03);
+
+    const right = new THREE.Mesh(propGeo, mat);
+    gun.add(right);
+    const left = new THREE.Mesh(propGeo, mat);
+    left.scale.set(-1, 1, 1);
+    gun.add(left);
   }
   else if (T.weapon === 'shotgun') {
     bx(0.1, 0.13, 0.66, 0, 0.02, 0.2, mat, gun);

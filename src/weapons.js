@@ -331,48 +331,174 @@ export class Launcher extends Gun {
 
 export class Katana extends ViewModel {
   constructor(ctx) {
-    super(ctx); this.name = 'Katana'; this.hint = 'Corta · Mantén apuntar para bloquear y desviar balas'; this.kind = 'katana';
+    super(ctx); this.name = 'Espada de Energía'; this.hint = 'Corte de plasma · Mantén apuntar para bloquear y desviar proyectiles'; this.kind = 'katana';
     this.mat = makeInkMaterial({ ink: INK.BLUE }); this.dark = makeInkMaterial({ ink: INK.BLACK });
-    this.basePos.set(0.27, -0.25, -0.4); this.baseRot.set(0.75, 0.15, -0.35); this.aimPos.copy(this.basePos);
+    this.basePos.set(0.20, -0.28, -0.34); this.baseRot.set(1.40, 0.30, 1.24); this.aimPos.copy(this.basePos);
     this.slashT = 0; this.slashDur = 0.27; this.combo = 0; this.comboT = 0; this.blocking = false; this.blockT = 0; this.blockAmt = 0; this.hitDone = false; this.cooldown = 0; this.damage = 75;
-    // guard pose: the sword simply comes in close to the face, held upright
-    this.blockPos = new THREE.Vector3(0.21, -0.31, -0.36); this.blockRot = new THREE.Vector3(1.40, 0.30, 1.24); this.deflectKick = 0;
+    // guard pose: the sword comes in closer across the chest into an active parry stance
+    this.blockPos = new THREE.Vector3(0.14, -0.24, -0.30); this.blockRot = new THREE.Vector3(1.46, 0.38, 1.32); this.deflectKick = 0;
     this.parrySwing = 0; this.parryDir = 1; this.bloodLevel = 0;
     this.build();
   }
+  setTeamInk(ink) {
+    super.setTeamInk(ink);
+    if (this.lightningGroup) {
+      this.lightningGroup.traverse((o) => {
+        if (o.material) setInk(o.material, ink);
+      });
+    }
+  }
   build() {
     const mat = this.mat, dark = this.dark; const g = this.root;
-    this.blade = bx(0.012, 0.035, 1.0, 0, 0, -0.55, mat, g); bx(0.012, 0.02, 0.08, 0, 0.007, -1.07, mat, g).rotation.x = 0.3;
-    bx(0.1, 0.1, 0.02, 0, 0, -0.05, dark, g); bx(0.03, 0.036, 0.3, 0, 0, 0.12, dark, g);
-    for (let i = 0; i < 6; i++) bx(0.036, 0.04, 0.02, 0, 0, 0.02 + i * 0.045, mat, g);
-    hand(mat, 0.0, -0.005, 0.05, g, [0.5, -0.5, 1]); hand(mat, 0.0, -0.005, 0.2, g, [-0.4, -0.7, 1]);
-    this.tip = new THREE.Object3D(); this.tip.position.set(0, 0, -1.05); g.add(this.tip);
-    // Blood clings to the flat of the blade. Each streak is a ragged sliver built in the plane of
-    // the steel and inset inside its silhouette, so nothing ever hangs off an edge.
-    const blood = makeInkMaterial({ ink: INK.RED, fill: true, side: THREE.DoubleSide });
-    const BH = 0.0168, BX = 0.0067;                 // blade half height, and the face to sit on
-    this.smears = [];
-    const spec = [
-      [-0.34, 0.30, 0.00, 1], [-0.70, 0.26, 0.18, -1], [-0.95, 0.17, 0.40, 1],
-      [-0.52, 0.22, 0.58, -1], [-0.20, 0.20, 0.74, 1], [-0.84, 0.20, 0.88, -1],
+
+    // --- Halo Energy Sword: Silhouette & Ergonomic Grip ---
+    // Central horizontal grip
+    cyl(0.022, 0.15, 0, 0, 0.02, dark, g, 'x', 12);
+    for (let i = -2; i <= 2; i++) {
+      cyl(0.025, 0.012, i * 0.026, 0, 0.02, mat, g, 'x', 8);
+    }
+    // Pommel caps
+    sph(0.028, -0.078, 0, 0.02, dark, g, 10);
+    sph(0.028, 0.078, 0, 0.02, dark, g, 10);
+    // Knuckle guard & center emitter housing
+    bx(0.09, 0.045, 0.05, 0, 0.008, -0.015, dark, g);
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.024, 0.07, 6), dark);
+    beak.rotation.x = -Math.PI / 2;
+    beak.position.set(0, 0.008, -0.065);
+    g.add(beak);
+    // Center plasma crystal
+    sph(0.013, 0, 0.008, -0.072, mat, g, 8);
+    // Outer strut anchors
+    bx(0.038, 0.032, 0.07, -0.092, 0.004, -0.035, dark, g);
+    bx(0.038, 0.032, 0.07, 0.092, 0.004, -0.035, dark, g);
+
+    // Player fist holding the grip
+    hand(mat, 0.0, -0.012, 0.025, g, [0, -0.7, 0.7], 0.38);
+
+    // --- Twin Energy Blades ---
+    function createEnergyBladeShape() {
+      const s = new THREE.Shape();
+      s.moveTo(0.065, 0.005);
+      s.lineTo(0.095, -0.04);
+      s.lineTo(0.165, -0.15); // outer wing barb
+      s.quadraticCurveTo(0.125, -0.25, 0.098, -0.36); // waist
+      s.quadraticCurveTo(0.108, -0.46, 0.095, -0.58); // mid knuckle
+      s.quadraticCurveTo(0.075, -0.70, 0.048, -0.82); // taper
+      s.lineTo(0.020, -0.94); // outer tip
+      s.lineTo(0.015, -0.94); // inner sharp tip
+      s.lineTo(0.015, -0.65);
+      s.lineTo(0.013, -0.38);
+      s.quadraticCurveTo(0.016, -0.24, 0.035, -0.14);
+      s.quadraticCurveTo(0.052, -0.06, 0.065, 0.005);
+
+      const hole = new THREE.Path();
+      const hx = 0.044, hz1 = -0.28, hz2 = -0.42, hw = 0.008;
+      hole.moveTo(hx - hw / 2, hz1);
+      hole.lineTo(hx + hw / 2, hz1);
+      hole.lineTo(hx + hw / 2, hz2);
+      hole.lineTo(hx - hw / 2, hz2);
+      hole.closePath();
+      s.holes.push(hole);
+      return s;
+    }
+
+    const bladeGeo = new THREE.ExtrudeGeometry(createEnergyBladeShape(), {
+      depth: 0.014,
+      bevelEnabled: true,
+      bevelThickness: 0.003,
+      bevelSize: 0.003,
+      bevelSegments: 1,
+    });
+    bladeGeo.rotateX(Math.PI / 2);
+    bladeGeo.translate(0, 0.007, 0);
+
+    this.rightBlade = new THREE.Mesh(bladeGeo, mat);
+    g.add(this.rightBlade);
+
+    this.leftBlade = new THREE.Mesh(bladeGeo, mat);
+    this.leftBlade.scale.set(-1, 1, 1);
+    g.add(this.leftBlade);
+
+    this.blade = this.rightBlade;
+
+    // --- Crackling Energy Lightning Veins ---
+    this.lightningGroup = new THREE.Group();
+    g.add(this.lightningGroup);
+
+    const boltPoints = [
+      [0.052, 0.008, -0.08],
+      [0.046, 0.008, -0.16],
+      [0.058, 0.008, -0.24],
+      [0.064, 0.008, -0.34],
+      [0.052, 0.008, -0.44],
+      [0.058, 0.008, -0.54],
+      [0.044, 0.008, -0.64],
+      [0.046, 0.008, -0.74],
+      [0.030, 0.008, -0.84],
+      [0.018, 0.008, -0.92],
     ];
-    for (let i = 0; i < spec.length; i++) {
-      const [zc, len, at, side] = spec[i];
-      const sh = new THREE.Shape(); const n = 12;
-      // top edge of the streak: ragged, always inside the blade
-      sh.moveTo(-len / 2, -BH * 0.92);
-      for (let k = 0; k <= n; k++) {
-        const t = k / n, x = -len / 2 + len * t;
-        const taper = Math.sin(Math.PI * Math.min(1, t * 1.15));
-        sh.lineTo(x, -BH * 0.92 + BH * 1.84 * (0.30 + 0.70 * taper * (0.55 + 0.45 * Math.abs(Math.sin(t * 7 + i * 2.1)))));
+    const forkPoints = [
+      [[0.058, 0.008, -0.24], [0.088, 0.008, -0.28]],
+      [[0.052, 0.008, -0.44], [0.080, 0.008, -0.48]],
+      [[0.046, 0.008, -0.74], [0.062, 0.008, -0.76]],
+    ];
+
+    function createBoltMesh(p1, p2, m) {
+      const v1 = new THREE.Vector3(...p1), v2 = new THREE.Vector3(...p2);
+      const dist = v1.distanceTo(v2);
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.0022, 0.0022, dist, 5), m);
+      seg.position.copy(v1).add(v2).multiplyScalar(0.5);
+      seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v2.clone().sub(v1).normalize());
+      return seg;
+    }
+
+    for (let i = 0; i < boltPoints.length - 1; i++) {
+      const bR = createBoltMesh(boltPoints[i], boltPoints[i + 1], mat);
+      this.lightningGroup.add(bR);
+      const bL = createBoltMesh(
+        [-boltPoints[i][0], boltPoints[i][1], boltPoints[i][2]],
+        [-boltPoints[i + 1][0], boltPoints[i + 1][1], boltPoints[i + 1][2]],
+        mat
+      );
+      this.lightningGroup.add(bL);
+    }
+    for (const [p1, p2] of forkPoints) {
+      const fR = createBoltMesh(p1, p2, mat);
+      this.lightningGroup.add(fR);
+      const fL = createBoltMesh([-p1[0], p1[1], p1[2]], [-p2[0], p2[1], p2[2]], mat);
+      this.lightningGroup.add(fL);
+    }
+
+    this.tip = new THREE.Object3D();
+    this.tip.position.set(0, 0, -0.96);
+    g.add(this.tip);
+
+    // --- Blood / Energy Surge Decals ---
+    const blood = makeInkMaterial({ ink: INK.RED, fill: true, side: THREE.DoubleSide });
+    this.smears = [];
+    const smearSpecs = [
+      [0.05, -0.22, 0.16, 0.00],
+      [0.042, -0.46, 0.20, 0.25],
+      [0.035, -0.68, 0.18, 0.55],
+      [0.024, -0.84, 0.14, 0.80],
+    ];
+    for (let s = 0; s < smearSpecs.length; s++) {
+      const [sx, sz, len, at] = smearSpecs[s];
+      for (const side of [1, -1]) {
+        const sh = new THREE.Shape();
+        sh.moveTo(-len / 2, -0.012);
+        sh.lineTo(len / 2, -0.012);
+        sh.lineTo(len * 0.3, 0.012);
+        sh.lineTo(-len * 0.3, 0.012);
+        sh.closePath();
+        const smGeo = new THREE.ShapeGeometry(sh);
+        smGeo.rotateX(-Math.PI / 2);
+        const smMesh = new THREE.Mesh(smGeo, blood);
+        smMesh.position.set(side * sx, 0.009, sz);
+        smMesh.visible = false;
+        g.add(smMesh);
+        this.smears.push({ mesh: smMesh, at, base: len });
       }
-      sh.lineTo(len / 2, -BH * 0.92); sh.closePath();
-      const geo = new THREE.ShapeGeometry(sh, 2);
-      geo.rotateY(Math.PI / 2);                     // lay it into the plane of the blade
-      const m = new THREE.Mesh(geo, blood);
-      m.position.set(side * BX, 0, zc); m.visible = false;
-      g.add(m);
-      this.smears.push({ mesh: m, at, base: len, side });
     }
   }
   get spreadPx() { return 4; }
@@ -393,6 +519,10 @@ export class Katana extends ViewModel {
     this.cooldown -= dt; this.comboT -= dt; if (this.comboT <= 0) this.combo = 0; this.deflectKick = Math.max(0, this.deflectKick - dt * 6);
     this.parrySwing = Math.max(0, this.parrySwing - dt * 4.5);
     this.updateBlood(dt, st);
+    if (this.lightningGroup) {
+      const f = 0.96 + Math.sin(performance.now() * 0.03) * 0.05;
+      this.lightningGroup.scale.set(f, f, 1);
+    }
     // guard is up only while the aim trigger is held and you are not swinging
     const wantBlock = st.aim && !st.fire && this.slashT <= 0 && this.cooldown <= 0;
     if (wantBlock && !this.blocking) this.blockT = 0;
@@ -405,7 +535,9 @@ export class Katana extends ViewModel {
     if (this.blockAmt > 0.001) {
       const t = this.blockAmt;
       p.lerp(this.blockPos, t);
-      r.x = lerp(r.x, this.blockRot.x, t); r.y = lerp(r.y, this.blockRot.y, t); r.z = lerp(r.z, this.blockRot.z, t);
+      r.x = lerp(this.baseRot.x + this.swayRot.x, this.blockRot.x, t);
+      r.y = lerp(this.baseRot.y + this.swayRot.y, this.blockRot.y, t);
+      r.z = lerp(this.baseRot.z + this.swayRot.z, this.blockRot.z, t);
     }
     // a parry is a small flick of the wrist, nothing that throws the pose around
     if (this.parrySwing > 0) {

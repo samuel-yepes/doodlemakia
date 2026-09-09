@@ -10,7 +10,7 @@ export class HUD {
     root.innerHTML = `
       <div class="nametags" id="nametags"></div>
       <div class="scope" id="scope"><div class="mask"></div><div class="ring"></div><div class="cx"></div><div class="cy"></div><div class="dot"></div></div>
-      <div class="focus-meter" id="focusmeter"><div class="fm-label">Katana</div><div class="fm-tube"><div class="fm-fill" id="fmfill"></div><i class="fm-f1"></i><i class="fm-f2"></i><i class="fm-f3"></i></div><div class="fm-ready" id="fmready">Corte listo</div></div>
+      <div class="focus-meter" id="focusmeter"><div class="fm-label">Espada</div><div class="fm-tube"><div class="fm-fill" id="fmfill"></div><i class="fm-f1"></i><i class="fm-f2"></i><i class="fm-f3"></i></div><div class="fm-ready" id="fmready">Corte listo</div></div>
       <div class="focus-mark" id="focusmark"><i></i><i></i><i></i><i></i></div>
       <div class="crosshair" id="crosshair"><i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i><i class="ch-dot"></i></div>
       <div class="grapple-ret" id="gret"></div><div class="gstam" id="gstam" hidden><i id="gstamfill"></i></div>
@@ -227,7 +227,7 @@ export function getControlsHTML(activeMode = 'kb') {
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Clic Izq</kbd></span><span class="kact">Disparar / Tajo</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">Clic Der</kbd></span><span class="kact">Apuntar / Bloqueo</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">R</kbd></span><span class="kact">Recargar arma</span></div>
-        <div class="krow"><span class="kgroup"><kbd class="kbadge">F</kbd></span><span class="kact">Tajo katana rápido</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">F</kbd></span><span class="kact">Tajo rápido de espada</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">G</kbd></span><span class="kact">Granada (mantén)</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Clic Izq+Der</kbd></span><span class="kact">Corte Focus (100%)</span></div>
       </div>
@@ -258,7 +258,7 @@ export function getControlsHTML(activeMode = 'kb') {
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">R2 / RT</kbd></span><span class="kact">Disparar / Tajo</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">L2 / LT</kbd></span><span class="kact">Apuntar / Bloqueo</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">□ / X</kbd></span><span class="kact">Recargar arma</span></div>
-        <div class="krow"><span class="kgroup"><kbd class="kbadge">R1 / RB</kbd></span><span class="kact">Tajo katana rápido</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">R1 / RB</kbd></span><span class="kact">Tajo rápido de espada</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">L2 + R2</kbd></span><span class="kact">Embestida corte</span></div>
       </div>
       <div class="ctrl-card">
