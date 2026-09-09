@@ -47,6 +47,7 @@ export class RemotePlayer {
     const flag = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.02), makeInkMaterial({ ink: this.ink, fill: true, side: THREE.DoubleSide })); this.tagG.add(flag);
     this.corpse = false;
   }
+  get mesh() { return this.root; }
   setTeam(team, ink = null) {
     this.team = team;
     const newInk = ink != null ? ink : (team === 'red' || team === 1 ? INK.RED : INK.BLUE);

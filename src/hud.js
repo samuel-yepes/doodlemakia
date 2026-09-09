@@ -124,10 +124,11 @@ export class HUD {
     camera.getWorldDirection(_camFwd);
 
     for (const rp of remotes.values()) {
-      if (!rp || !rp.alive || !rp.mesh || !rp.mesh.visible) continue;
+      const mesh = rp.mesh || rp.root;
+      if (!rp || !rp.alive || !mesh || !mesh.visible) continue;
       activeIds.add(rp.id);
 
-      const targetPos = rp.mesh.position.clone();
+      const targetPos = mesh.position.clone();
       targetPos.y += 2.15;
 
       _toTag.subVectors(targetPos, camPos);

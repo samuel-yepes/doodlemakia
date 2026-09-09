@@ -197,7 +197,8 @@ export class Net {
         players: this.conns.size + 1,
         max: this.maxPlayers,
         inMatch: !!this.inMatch,
-        hostName: this.hostName
+        hostName: this.hostName,
+        lobby: this.getLobbyInfo ? this.getLobbyInfo() : null
       };
       if (conn.metadata && conn.metadata.probe) {
         conn.send({ t: 'welcome', d: welcome, from: this.id });
@@ -265,7 +266,10 @@ export class Net {
       const settle = () => {
         if (done) return; done = true; clearTimeout(timer); clearTimeout(gather);
         this.peer.off('error', onErr); const val = pick();
-        for (const a of attempts) if (!val || a.conn !== val.conn) { try { a.conn.close(); } catch (e) { /* ignore */ } }
+        for (const a of attempts) {
+          if (!val || a.conn !== val.conn) { try { a.conn.close(); } catch (e) {} }
+          else if (a.onData) { try { a.conn.off('data', a.onData); } catch (e) {} }
+        }
         resolve(val);
       };
       const failOne = (a) => { if (a.done) return; a.done = true; pending--; if (pending <= 0) settle(); };
@@ -275,15 +279,17 @@ export class Net {
       const probeMeta = { ...meta, probe: true };
       for (const hostId of ids) {
         let conn; try { conn = this.peer.connect(hostId, { reliable: true, serialization: 'json', metadata: probeMeta }); } catch (e) { pending--; continue; }
-        const a = { conn, hostId, done: false }; attempts.push(a);
-        conn.on('data', (msg) => {
+        const a = { conn, hostId, done: false, onData: null }; attempts.push(a);
+        const onData = (msg) => {
           if (!msg || a.done) return;
           if (msg.t === 'welcome') {
             a.done = true; pending--; offers.push({ conn, hostId, welcome: msg.d });
             this._setState(`Se encontraron ${offers.length} salas abiertas…`, onStatus);
             if (pending <= 0) settle(); else if (!gather) gather = setTimeout(settle, 1200);
           } else if (msg.t === 'refused') failOne(a);
-        });
+        };
+        a.onData = onData;
+        conn.on('data', onData);
         conn.on('error', () => failOne(a)); conn.on('close', () => failOne(a));
       }
       if (pending <= 0) settle();
@@ -369,16 +375,19 @@ export class Net {
       for (const hostId of ids) {
         let conn; try { conn = this.peer.connect(hostId, { reliable: true, serialization: 'json', metadata: meta }); } catch (e) { pending--; continue; }
         const a = { conn, hostId, done: false }; attempts.push(a);
-        conn.on('data', (msg) => {
+        const onData = (msg) => {
           if (!msg || a.done) return;
           if (msg.t === 'welcome') {
             a.done = true;
+            try { conn.off('data', onData); } catch (e) {}
             this._setState('Sincronizando estado…', onStatus);
             finish(null, { hostId, conn, welcome: msg.d });
           } else if (msg.t === 'refused') {
+            try { conn.off('data', onData); } catch (e) {}
             failOne(a, new Error(msg.d && msg.d.reason || 'La sala rechazó la conexión'));
           }
-        });
+        };
+        conn.on('data', onData);
         conn.on('error', (e) => failOne(a, e instanceof Error ? e : new Error('Error al negociar WebRTC')));
         conn.on('close', () => failOne(a, null));
       }
@@ -389,6 +398,7 @@ export class Net {
   _adopt(hostId, conn, welcome) {
     this.hostId = hostId; this.conns.set(hostId, conn); this.connected = true;
     this.isPublic = !!(welcome && welcome.isPublic); this._wire(conn);
+    if (this.onAdopt) this.onAdopt(hostId, welcome);
   }
 
   leave() {

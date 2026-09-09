@@ -615,7 +615,35 @@ function addRemote(id, name, team = 'red') {
   remote.set(id, rp); return rp;
 }
 function removeRemote(id) { const r = remote.get(id); if (r) { r.dispose(); remote.delete(id); } lobby.players.delete(id); scores.delete(id); }
-function lobbyRows() { return [...lobby.players.entries()].map(([id, p]) => ({ id, name: p.name, team: p.team || 'blue' })); }
+function lobbyRows() {
+  const map = new Map(lobby.players);
+  if (net.id && !map.has(net.id)) {
+    map.set(net.id, { name: myName, team: myTeam });
+  }
+  return [...map.entries()].map(([id, p]) => ({ id, name: p.name || 'Garabato', team: p.team || 'blue' }));
+}
+net.getLobbyInfo = () => ({
+  players: lobbyRows(),
+  hostId: net.id,
+  map: lobby.map || mapKey,
+  gameMode: lobby.gameMode || 'ffa'
+});
+net.onAdopt = (hostId, welcome) => {
+  if (welcome && welcome.lobby) {
+    const d = welcome.lobby;
+    lobby.hostId = d.hostId || hostId;
+    if (d.map) lobby.map = knownMap(d.map);
+    if (d.gameMode) lobby.gameMode = d.gameMode;
+    if (d.players && Array.isArray(d.players)) {
+      for (const p of d.players) {
+        lobby.players.set(p.id, { name: p.name, team: p.team || 'blue' });
+      }
+    }
+  }
+  lobby.players.set(net.id, { name: myName, team: myTeam });
+  net.send('join_info', { name: myName, team: myTeam });
+  renderLobby();
+};
 function broadcastLobby() { net.send('lobby', { players: lobbyRows(), hostId: net.id, isPublic: lobby.isPublic, map: lobby.map || mapKey, gameMode: lobby.gameMode || 'ffa', shown: net.aliasCode || net.code }); renderLobby(); }
 function setLocalTeam(team) {
   myTeam = team;
@@ -626,8 +654,16 @@ function setLocalTeam(team) {
   else net.send('setteam', { team });
   renderLobby();
 }
+const setMyTeam = setLocalTeam;
 const inMatch = () => ['play', 'dying', 'over'].includes(game.state);
-net.onPeerLeave = (id) => { const nm = (lobby.players.get(id) || {}).name; removeRemote(id); broadcastLobby(); if (inMatch()) { hud.kill((nm || 'Alguien') + ' se fue', 0); sendScores(); } };
+net.onPeerLeave = (id) => {
+  const nm = (lobby.players.get(id) || {}).name;
+  removeRemote(id);
+  broadcastLobby();
+  hud.tip(`👋 <b>${esc(nm || 'Alguien')}</b> ha salido de la sala`, 2.5);
+  if (inMatch()) { hud.kill((nm || 'Alguien') + ' se fue', 0); sendScores(); }
+  renderLobby();
+};
 net.onDisconnect = () => { if (lobby.order && lobby.order.some((id) => id !== lobby.hostId)) migrateHost(); else leaveOnline('El anfitrión abandonó la sala'); };
 // ---- host transfer: when the host goes, the earliest-joined player left takes over on a generation
 // code (the old code is slow to free up on the signalling server); everyone else rejoins there
@@ -667,19 +703,46 @@ net.onPeerJoin = (from, meta) => {
   let bCount = (myTeam === 'blue' ? 1 : 0), rCount = (myTeam === 'red' ? 1 : 0);
   for (const [id, p] of lobby.players) { if (p.team === 'red') rCount++; else bCount++; }
   const team = (bCount <= rCount) ? 'blue' : 'red';
+  const isNew = !lobby.players.has(from);
   lobby.players.set(from, { name, team }); addRemote(from, name, team); broadcastLobby();
   if (game.state === 'play' || game.state === 'dying') {
     if (!scores.has(from)) scores.set(from, { name, kills: 0, deaths: 0, team });
     net.sendTo(from, 'start', { late: true, spawn: farthestSpawnIndex(), map: lobby.map || mapKey, gameMode: lobby.gameMode || game.mode, broken: level.breakables.filter((b) => !b.alive).map((b) => b.id) });
     sendScores();
     hud.kill(name + ' se unió', 0);
+  } else if (isNew) {
+    hud.tip(`🎮 <b>${esc(name)}</b> ha entrado a la sala`, 2.5);
+    try { audio.buy(); } catch (e) {}
   }
 };
+net.on('join_info', (d, from) => {
+  if (!net.isHost) return;
+  const name = String(d && d.name || 'doodle').slice(0, 14);
+  const team = (d && d.team === 'red') ? 'red' : 'blue';
+  const isNew = !lobby.players.has(from);
+  lobby.players.set(from, { name, team });
+  addRemote(from, name, team);
+  broadcastLobby();
+  renderLobby();
+  if (isNew) {
+    hud.tip(`🎮 <b>${esc(name)}</b> ha entrado a la sala`, 2.5);
+    try { audio.buy(); } catch (e) {}
+  }
+});
 net.on('lobby', (d) => {
   lobby.hostId = d.hostId; lobby.isPublic = !!d.isPublic; lobby.code = net.code; lobby.shown = d.shown || net.code;
   if (d.map) lobby.map = knownMap(d.map);
   if (d.gameMode) { lobby.gameMode = d.gameMode; if (inMatch()) game.mode = d.gameMode; }
-  lobby.order = d.players.map((p) => p.id); lobby.players.clear();
+  lobby.order = d.players.map((p) => p.id);
+
+  for (const p of d.players) {
+    if (p.id !== net.id && !lobby.players.has(p.id)) {
+      hud.tip(`🎮 <b>${esc(p.name)}</b> ha entrado a la sala`, 2.5);
+      try { audio.buy(); } catch (e) {}
+    }
+  }
+
+  lobby.players.clear();
   for (const p of d.players) {
     lobby.players.set(p.id, { name: p.name, team: p.team || 'blue' });
     if (p.id === net.id && p.team) { myTeam = p.team; player.setTeam(myTeam); }
@@ -695,6 +758,16 @@ net.on('lobby', (d) => {
   }
   renderLobby();
 });
+net.on('setname', (d, from) => {
+  if (!net.isHost) return;
+  const p = lobby.players.get(from);
+  if (p && d.name) {
+    p.name = String(d.name).slice(0, 14);
+    const r = remote.get(from);
+    if (r) r.name = p.name;
+    broadcastLobby();
+  }
+});
 net.on('setteam', (d, from) => {
   if (!net.isHost) return;
   const p = lobby.players.get(from);
@@ -703,7 +776,13 @@ net.on('setteam', (d, from) => {
     broadcastLobby();
   }
 });
-net.on('leave', (d) => { const nm = (lobby.players.get(d.id) || {}).name; removeRemote(d.id); if (inMatch()) hud.kill((nm || 'Alguien') + ' se fue', 0); renderLobby(); });
+net.on('leave', (d) => {
+  const nm = (lobby.players.get(d.id) || {}).name;
+  removeRemote(d.id);
+  hud.tip(`👋 <b>${esc(nm || 'Alguien')}</b> ha salido de la sala`, 2.5);
+  if (inMatch()) hud.kill((nm || 'Alguien') + ' se fue', 0);
+  renderLobby();
+});
 net.on('start', (d) => {
   if (net.isHost) return;
   if (d.map) {
@@ -857,7 +936,18 @@ function wireSettings() {
 }
 function wireName(box) {
   const nb = box.querySelector('#setName'); if (!nb) return;
-  nb.addEventListener('input', (e) => { myName = e.target.value.trim().slice(0, 14) || myName; localStorage.setItem('doodle_name', myName); player.name = myName; net.hostName = myName; });
+  nb.addEventListener('input', (e) => {
+    myName = e.target.value.trim().slice(0, 14) || myName;
+    localStorage.setItem('doodle_name', myName);
+    player.name = myName;
+    net.hostName = myName;
+    if (net.active) {
+      const lp = lobby.players.get(net.id);
+      if (lp) lp.name = myName;
+      if (net.isHost) broadcastLobby();
+      else net.send('setname', { name: myName });
+    }
+  });
 }
 function checkpointHTML() {
   if (checkpoint < 5) return '';
@@ -932,25 +1022,63 @@ function lobbyHTML() {
   const rows = lobbyRows(); const host = net.isHost; const n = rows.length;
   const isTdm = (lobby.gameMode === 'tdm');
   const code = String(net.isHost ? (net.aliasCode || net.code) : (lobby.shown || net.code) || '').replace(/-\d+$/, '');
-  return `<h1>Sala</h1><h2>${isTdm ? 'Duelo por Equipos · Primero a ' + TDM_TARGET + ' bajas' : 'Todos contra todos · Primero a ' + FFA_TARGET + ' bajas'} · ${n}/${net.maxPlayers} jugadores</h2>
+  return `<h1>Sala de Espera</h1><h2>${isTdm ? 'Duelo por Equipos · Primero a ' + TDM_TARGET + ' bajas' : 'Todos contra todos · Primero a ' + FFA_TARGET + ' bajas'}</h2>
     <div class="online" id="online">
-      <div class="row"><span>Código</span><span class="code">${code}</span></div>
-      <div class="row"><button type="button" class="alt" id="copyLinkBtn">Copiar enlace de sala</button></div>
-      <div class="modes">
-        <button type="button" class="modebtn${!isTdm ? ' on' : ''}" data-mode="ffa" ${host ? '' : 'disabled'}>Todos contra todos<i>FFA · Sin equipos</i></button>
-        <button type="button" class="modebtn${isTdm ? ' on' : ''}" data-mode="tdm" ${host ? '' : 'disabled'}>Duelo por Equipos<i>TDM · Azul vs Rojo</i></button>
+      <div class="row room-code-row">
+        <span>Código de Sala:</span><span class="code">${code}</span>
+        <button type="button" class="alt" id="copyLinkBtn">Copiar enlace</button>
       </div>
+
+      <div class="room-roster-box">
+        <div class="room-roster-header">
+          <span class="room-roster-title">👥 Jugadores en la sala (<b id="rosterCount">${n}</b> / ${net.maxPlayers})</span>
+          <span class="room-roster-badge">${n < 2 ? '⏳ Esperando que entren más jugadores…' : '✅ ' + n + ' jugadores listos para combatir'}</span>
+        </div>
+        <div class="room-player-grid">
+          ${rows.map((p) => {
+            const isHost = (p.id === lobby.hostId);
+            const isMe = (p.id === net.id);
+            const tm = p.team === 'red' ? 'red' : 'blue';
+            const tmName = p.team === 'red' ? 'Equipo Rojo' : 'Equipo Azul';
+            return `
+              <div class="room-player-card ${tm}${isMe ? ' me' : ''}${isHost ? ' is-host' : ''}">
+                <div class="rpc-avatar ${tm}">
+                  <span class="rpc-icon">${isHost ? '👑' : '✏️'}</span>
+                </div>
+                <div class="rpc-info">
+                  <div class="rpc-name-row">
+                    <span class="rpc-name">${esc(p.name)}</span>
+                    ${isMe ? '<span class="rpc-tag me-tag">Tú</span>' : ''}
+                    ${isHost ? '<span class="rpc-tag host-tag">Anfitrión</span>' : ''}
+                  </div>
+                  <div class="rpc-meta">
+                    <span class="rpc-team-pill ${tm}">${tmName}</span>
+                    <span class="rpc-status">● En la sala</span>
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+
       <div class="row teampick">
-        <span>${isTdm ? 'Tu Equipo:' : 'Tu Color / Equipo:'}</span>
+        <span>Tu apodo:</span>
+        <input type="text" class="namebox" id="setName" maxlength="14" value="${esc(myName)}">
+        <span style="margin-left: 10px;">${isTdm ? 'Tu Equipo:' : 'Tu Color / Equipo:'}</span>
         <div class="teambtns">
           <button type="button" class="teambtn blue${myTeam === 'blue' ? ' on' : ''}" data-team="blue">Equipo Azul</button>
           <button type="button" class="teambtn red${myTeam === 'red' ? ' on' : ''}" data-team="red">Equipo Rojo</button>
         </div>
       </div>
+
+      <div class="modes">
+        <button type="button" class="modebtn${!isTdm ? ' on' : ''}" data-mode="ffa" ${host ? '' : 'disabled'}>Todos contra todos<i>FFA · Sin equipos</i></button>
+        <button type="button" class="modebtn${isTdm ? ' on' : ''}" data-mode="tdm" ${host ? '' : 'disabled'}>Duelo por Equipos<i>TDM · Azul vs Rojo</i></button>
+      </div>
       ${mapHTML(lobby.map || mapKey, host)}
       <div class="hint">${lobby.isPublic ? 'Esta sala es pública: cualquiera puede unirse por partida rápida, código o enlace directo' : 'Sala privada: comparte el código o enlace directo con tus amigos'}</div>
-      <div class="plist">${rows.map((p) => `<div class="${p.id === lobby.hostId ? 'host' : ''}${p.id === net.id ? ' me' : ''}"><span>${esc(p.name)}</span><span><span class="team-badge ${p.team === 'red' ? 'red' : 'blue'}">${p.team === 'red' ? 'Rojo' : 'Azul'}</span>${p.id === net.id ? ' (Tú)' : ''}</span></div>`).join('')}</div>
-      <div class="row"><button type="button" class="big" id="startBtn">Comenzar partida</button><button type="button" class="alt" id="leaveBtn">Salir</button></div>
+      <div class="row"><button type="button" class="big" id="startBtn">Comenzar partida</button><button type="button" class="alt" id="leaveBtn">Salir de la sala</button></div>
       <div class="status" id="status">${esc(lobby.status || '')}</div><div class="hint">Cualquiera puede iniciar · ${n < 2 ? 'Otros pueden unirse tras empezar' : n + ' jugadores listos'}</div>
     </div>`;
 }
