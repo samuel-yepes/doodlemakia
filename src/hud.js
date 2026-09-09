@@ -104,8 +104,15 @@ export class HUD {
     setTimeout(() => d.remove(), 1700); while (this.el.killfeed.children.length > 6) this.el.killfeed.firstChild.remove();
   }
   damageFrom(angle) { const i = document.createElement('i'); i.style.transform = `rotate(${(angle * 180 / Math.PI).toFixed(1)}deg)`; this.el.dmg.appendChild(i); setTimeout(() => i.remove(), 1000); }
-  showScreen(html) { this.el.panel.innerHTML = html; this.el.screen.classList.add('show'); }
-  hideScreen() { this.el.screen.classList.remove('show'); }
+  showScreen(html) {
+    this.el.panel.innerHTML = html;
+    this.el.screen.classList.add('show');
+    if (this.el.netStatus) this.el.netStatus.style.display = 'none';
+  }
+  hideScreen() {
+    this.el.screen.classList.remove('show');
+    if (this.el.netStatus && !this.el.netStatus.hidden) this.el.netStatus.style.display = '';
+  }
   setGameplayVisible(v) {
     this.root.classList.toggle('nogame', !v);
     if (!v) this.clearNametags();
@@ -113,51 +120,48 @@ export class HUD {
   updateNametags(remotes, camera, world, localPlayer) {
     if (!this.el.nametags) return;
     const activeIds = new Set();
-    const w = window.innerWidth, h = window.innerHeight;
     const camPos = camera.position;
     camera.getWorldDirection(_camFwd);
 
-    for (const [id, rp] of remotes) {
-      if (!rp || !rp.alive || rp.away || !rp.root || !rp.root.visible) continue;
-      activeIds.add(id);
+    for (const rp of remotes.values()) {
+      if (!rp || !rp.alive || !rp.mesh || !rp.mesh.visible) continue;
+      activeIds.add(rp.id);
 
-      _vTag.set(rp.body.pos.x, rp.body.pos.y + (rp.crouching ? 1.6 : 2.3), rp.body.pos.z);
-      _toTag.subVectors(_vTag, camPos);
+      const targetPos = rp.mesh.position.clone();
+      targetPos.y += 2.15;
+
+      _toTag.subVectors(targetPos, camPos);
       const dist = _toTag.length();
-
-      if (_toTag.dot(_camFwd) <= 0.1 || dist > 85) {
-        const el = this._nameTags.get(id);
+      if (dist > 75 || _camFwd.dot(_toTag.clone().normalize()) <= 0.15) {
+        const el = this._nameTags.get(rp.id);
         if (el) el.style.display = 'none';
         continue;
       }
 
-      _vTag.project(camera);
-      if (_vTag.z > 1.0) {
-        const el = this._nameTags.get(id);
+      _vTag.copy(targetPos).project(camera);
+      if (_vTag.z > 1) {
+        const el = this._nameTags.get(rp.id);
         if (el) el.style.display = 'none';
         continue;
       }
 
-      const sx = (_vTag.x * 0.5 + 0.5) * w;
-      const sy = (-_vTag.y * 0.5 + 0.5) * h;
+      const sx = (_vTag.x * 0.5 + 0.5) * window.innerWidth;
+      const sy = (-(_vTag.y * 0.5) + 0.5) * window.innerHeight;
 
-      _toTag.normalize();
-      const hit = world ? world.raycast(camPos, _toTag, dist - 0.5) : null;
-      const isTeammate = localPlayer && (localPlayer.team === rp.team);
-
-      if (hit && !isTeammate) {
-        const el = this._nameTags.get(id);
+      const hit = world.raycast(camPos, _toTag.clone().normalize(), dist - 0.5, { noPlayer: true });
+      if (hit && dist > 28) {
+        const el = this._nameTags.get(rp.id);
         if (el) el.style.display = 'none';
         continue;
       }
 
-      let el = this._nameTags.get(id);
+      let el = this._nameTags.get(rp.id);
       if (!el) {
         el = document.createElement('div');
         el.className = 'nametag';
         el.innerHTML = '<span class="nt-header"><i class="nt-dot"></i><b class="nt-name"></b></span><div class="nt-bar"><i class="nt-fill"></i></div>';
         this.el.nametags.appendChild(el);
-        this._nameTags.set(id, el);
+        this._nameTags.set(rp.id, el);
       }
 
       const teamColor = (rp.team === 'red' || rp.ink === 1) ? 'red' : 'blue';
@@ -198,30 +202,76 @@ export class HUD {
 
 export const KB_KEYS = { fire: 'Clic Izq', aim: 'Clic Der', block: 'Clic Der', jump: 'Espacio', sprint: 'Shift', slide: 'C', dash: 'C', grapple: 'Q', melee: 'F', reload: 'R', grenade: 'G', focus: 'Ambos clics (o X)', next: 'Rueda', pause: 'Esc', confirm: 'Espacio', score: 'Tab' };
 export const PAD_KEYS = { fire: 'R2', aim: 'L2', block: 'L2', jump: '✕', sprint: 'L3', slide: '○', dash: '○', grapple: 'L1', melee: 'R1', reload: '□', grenade: 'R3', focus: 'L2 + R2', next: '△', pause: 'Options', confirm: '✕', score: 'Create' };
-export const CONTROLS_HTML = `
-<div class="cols">
-  <div><div class="colhead">Ratón + Teclado</div>
-    <div><b>WASD</b> Moverse &nbsp; <b>Ratón</b> Mirar &nbsp; <b>Shift</b> Esprintar</div>
-    <div><b>Clic Izq</b> Disparar / Tajo &nbsp; <b>Clic Der</b> Apuntar / Bloquear</div>
-    <div><b>Espacio</b> Saltar (en pared = salto de pared)</div>
-    <div>En el aire pulsa <b>Espacio</b> = Doble salto</div>
-    <div><b>C / Ctrl</b> Deslizarse en suelo · Embestida aérea</div>
-    <div><b>Q / E</b> Gancho: toque para balanceo, mantener para recoger, saltar para impulso</div>
-    <div><b>F</b> Tajo rápido de katana &nbsp; <b>R</b> Recargar &nbsp; <b>M</b> Música</div>
-    <div><b>G</b> Granada · Mantén para lanzar más lejos</div>
-    <div><b>Tab</b> Marcador (en línea) &nbsp; <b>Esc</b> Pausa</div>
-    <div><b>1-7 / Rueda</b> Fusil · Escopeta · Sniper · Subfusil · Revólver · Lanzatintas · Katana</div>
-    <div><b>Trampolines / Resortes</b> Salta sobre ellos para impulsarte a gran altura</div>
+
+export function getControlsHTML(activeMode = 'kb') {
+  const isPad = activeMode === 'pad';
+  return `
+<div class="ctrl-box">
+  <div class="ctrl-tabs" id="ctrlTabs">
+    <button type="button" class="ctrl-tab ${!isPad ? 'active' : ''}" data-tab="kb">⌨️ Teclado y Ratón</button>
+    <button type="button" class="ctrl-tab ${isPad ? 'active' : ''}" data-tab="pad">🎮 Mando (PS5 / Xbox)</button>
   </div>
-  <div><div class="colhead">Mando PS5</div>
-    <div><b>Stick Izq</b> Moverse &nbsp; <b>Stick Der</b> Mirar &nbsp; <b>L3</b> Esprintar</div>
-    <div><b>R2</b> Disparar / Tajo &nbsp; <b>L2</b> Apuntar / Bloquear</div>
-    <div><b>✕</b> Saltar &nbsp; <b>○</b> Deslizarse · Embestida aérea</div>
-    <div><b>L1</b> Gancho (mantener para recoger, ✕ para impulso)</div>
-    <div><b>L2 + R2</b> Embestida con corte con energía al máximo</div>
-    <div><b>R1</b> Tajo rápido de katana y vuelve al arma</div>
-    <div><b>□</b> Recargar &nbsp; <b>△</b> Siguiente arma</div>
-    <div><b>R3 / D-pad Arriba</b> Granada · Mantén para lanzar más lejos</div>
-    <div><b>Create</b> Marcador (en línea) &nbsp; <b>Options</b> Pausa</div>
+  <div class="ctrl-pane ${!isPad ? 'active' : ''}" id="ctrlPaneKb">
+    <div class="ctrl-grid">
+      <div class="ctrl-card">
+        <div class="ctrl-card-title">🏃 Movimiento & Agilidad</div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">WASD</kbd></span><span class="kact">Moverse</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">Shift</kbd></span><span class="kact">Esprintar</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Espacio</kbd></span><span class="kact">Salto / Salto pared</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">Espacio ×2</kbd></span><span class="kact">Doble salto</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">C</kbd><span class="ksep">/</span><kbd class="kbadge">Ctrl</kbd></span><span class="kact">Deslizarse / Dash</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Q</kbd><span class="ksep">/</span><kbd class="kbadge kbd-primary">E</kbd></span><span class="kact">Gancho elástico</span></div>
+      </div>
+      <div class="ctrl-card">
+        <div class="ctrl-card-title">⚔️ Combate & Tácticas</div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Clic Izq</kbd></span><span class="kact">Disparar / Tajo</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">Clic Der</kbd></span><span class="kact">Apuntar / Bloqueo</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">R</kbd></span><span class="kact">Recargar arma</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">F</kbd></span><span class="kact">Tajo katana rápido</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">G</kbd></span><span class="kact">Granada (mantén)</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Clic Izq+Der</kbd></span><span class="kact">Corte Focus (100%)</span></div>
+      </div>
+      <div class="ctrl-card">
+        <div class="ctrl-card-title">🎒 Arsenal & Extras</div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">1 - 7</kbd><span class="ksep">/</span><kbd class="kbadge">Rueda</kbd></span><span class="kact">Cambiar arma</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">Tab</kbd></span><span class="kact">Marcador (en línea)</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">M</kbd></span><span class="kact">Música on/off</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">Esc</kbd></span><span class="kact">Menú / Pausa</span></div>
+        <div class="krow"><span class="kgroup"><span class="kbadge kbadge-soft">Trampolines</span></span><span class="kact">Gran impulso</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="ctrl-pane ${isPad ? 'active' : ''}" id="ctrlPanePad">
+    <div class="ctrl-grid">
+      <div class="ctrl-card">
+        <div class="ctrl-card-title">🏃 Movimiento & Agilidad</div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Stick Izq</kbd></span><span class="kact">Moverse</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">L3</kbd></span><span class="kact">Esprintar</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">✕ / A</kbd></span><span class="kact">Salto / Salto pared</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">✕ ×2</kbd></span><span class="kact">Doble salto</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">○ / B</kbd></span><span class="kact">Deslizarse / Dash</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">L1 / LB</kbd></span><span class="kact">Gancho elástico</span></div>
+      </div>
+      <div class="ctrl-card">
+        <div class="ctrl-card-title">⚔️ Combate & Tácticas</div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Stick Der</kbd></span><span class="kact">Mirar / Apuntar</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">R2 / RT</kbd></span><span class="kact">Disparar / Tajo</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">L2 / LT</kbd></span><span class="kact">Apuntar / Bloqueo</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">□ / X</kbd></span><span class="kact">Recargar arma</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">R1 / RB</kbd></span><span class="kact">Tajo katana rápido</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">L2 + R2</kbd></span><span class="kact">Embestida corte</span></div>
+      </div>
+      <div class="ctrl-card">
+        <div class="ctrl-card-title">🎒 Arsenal & Extras</div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">△ / Y</kbd></span><span class="kact">Siguiente arma</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">R3 / D-pad ↑</kbd></span><span class="kact">Granada (mantén)</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">Create / View</kbd></span><span class="kact">Marcador (en línea)</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">Options / Menu</kbd></span><span class="kact">Menú / Pausa</span></div>
+        <div class="krow"><span class="kgroup"><span class="kbadge kbadge-soft">Trampolines</span></span><span class="kact">Gran impulso</span></div>
+      </div>
+    </div>
   </div>
 </div>`;
+}
+
+export const CONTROLS_HTML = getControlsHTML('kb');

@@ -12,7 +12,7 @@ import { EnemyManager, BOSSES } from './enemies.js';
 import { Player } from './player.js';
 import { RemotePlayer, encodeLocal } from './players.js';
 import { Net } from './net.js';
-import { HUD, CONTROLS_HTML } from './hud.js';
+import { HUD, CONTROLS_HTML, getControlsHTML } from './hud.js';
 import { audio } from './audio.js';
 import { rand, choose, clamp } from './util.js';
 
@@ -51,11 +51,18 @@ function applySettings() {
   input.mouseSens = 0.0022 * settings.sens / 100; input.padSensX = 3.4 * settings.sens / 100; input.padSensY = 2.6 * settings.sens / 100; input.invertY = settings.invert;
   localStorage.setItem('doodle_sens', String(settings.sens)); localStorage.setItem('doodle_invert', settings.invert ? '1' : '0');
 }
-// ---------------- game state ----------------
+// ---------------- game state & map rotation ----------------
 const FFA_TARGET = 20, TDM_TARGET = 30, FFA_TIME = 600, RESPAWN = 2.5;
 const teamKills = { blue: 0, red: 0 };
 let myTeam = 'blue';
 let matchLeft = FFA_TIME, clockT = 0, clockRunning = false;
+let mapRotationIndex = Number(localStorage.getItem('doodle_rot_idx') || 0);
+let userExplicitlyPickedMap = false;
+const MAP_ROTATION_INTERVAL = 180; // 3 minutos por rotación de mapa
+let mapRotationTimer = MAP_ROTATION_INTERVAL;
+let mapWarn15 = false;
+let mapWarn5 = false;
+
 const mmss = (t) => { t = Math.max(0, Math.ceil(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
 const game = ctx.game = {
   state: 'start', mode: 'solo', menu: false, time: 0, hitstopT: 0, hitstopScale: 1, wave: 0, score: 0, combo: 0, comboT: 0, kills: 0, intermission: 0, queue: [], spawnT: 0, maxAlive: 6, deathT: 0,
@@ -76,6 +83,87 @@ const lobby = { players: new Map(), hostId: null, isPublic: true, status: '', co
 const scores = new Map();      // peer id -> { name, kills, deaths, team }
 let screen = 'main';           // which start-screen panel is showing: main | online | lobby
 window.__game = { ctx, game, player, enemies, nav, world, level, hud, effects, input, net, remote, lobby, scores, teamKills };
+
+function getNextRotatedMapKey() {
+  const key = LEVELS[mapRotationIndex % LEVELS.length].key;
+  mapRotationIndex = (mapRotationIndex + 1) % LEVELS.length;
+  localStorage.setItem('doodle_rot_idx', String(mapRotationIndex));
+  return key;
+}
+
+function rotateStartingMap() {
+  if (userExplicitlyPickedMap) {
+    userExplicitlyPickedMap = false;
+    setLevel(mapKey, false, true);
+    mapRotationTimer = MAP_ROTATION_INTERVAL;
+    mapWarn15 = false;
+    mapWarn5 = false;
+    hud.message('🗺️ Mapa: ' + mapName(mapKey), '¡Sobrevive a las oleadas!', 3);
+    return;
+  }
+  const nextKey = getNextRotatedMapKey();
+  mapKey = nextKey;
+  localStorage.setItem('doodle_map', nextKey);
+  setLevel(nextKey, false, true);
+  mapRotationTimer = MAP_ROTATION_INTERVAL;
+  mapWarn15 = false;
+  mapWarn5 = false;
+  hud.message('🗺️ Mapa: ' + mapName(nextKey), '¡Sobrevive a las oleadas!', 3);
+}
+
+function teleportPlayerToMapStart(pos) {
+  const b = player.body;
+  b.pos.copy(pos);
+  b.vel.set(0, 0, 0);
+  b.onGround = false;
+  player.detachGrapple(false);
+  player.sliding = false;
+  player.crouching = false;
+  player.shieldT = 3;
+  player.addAmmoAll(0.35);
+  player.hp = Math.min(player.maxHp, player.hp + 30);
+  hud.setHealth(player.hp, player.maxHp);
+}
+
+function rotateMapInGame() {
+  const nextKey = getNextRotatedMapKey();
+  mapKey = nextKey;
+  localStorage.setItem('doodle_map', nextKey);
+  setLevel(nextKey, false, true);
+
+  teleportPlayerToMapStart(level.playerStart || new THREE.Vector3(0, 0, 42));
+
+  for (const p of pickups) R.scene.remove(p.mesh);
+  pickups.length = 0;
+  pickupClock = 0;
+  spawnPickup(); spawnPickup();
+
+  enemies.clear();
+  effects.clear();
+  endFocus();
+  game.intermission = 0;
+  game.queue = [];
+  startWave(Math.max(1, game.wave));
+
+  hud.message('🗺️ ¡ROTACIÓN DE MAPA!', 'Ahora en: ' + mapName(nextKey), 3.8);
+  audio.wave();
+}
+
+function applyOnlineMapRotation(nextKey) {
+  mapKey = nextKey;
+  lobby.map = nextKey;
+  setLevel(nextKey, true, true);
+
+  teleportPlayerToMapStart(arenaSpawn());
+
+  for (const p of pickups) R.scene.remove(p.mesh);
+  pickups.length = 0;
+  pickupClock = 0;
+  effects.clear();
+
+  hud.message('🗺️ ¡ROTACIÓN DE MAPA!', 'El combate se traslada a: ' + mapName(nextKey), 3.8);
+  audio.wave();
+}
 
 // anything a bullet or a blade can hit besides enemies
 ctx.targets = () => [player, ...remote.values()];
@@ -618,7 +706,19 @@ net.on('setteam', (d, from) => {
 net.on('leave', (d) => { const nm = (lobby.players.get(d.id) || {}).name; removeRemote(d.id); if (inMatch()) hud.kill((nm || 'Alguien') + ' se fue', 0); renderLobby(); });
 net.on('start', (d) => {
   if (net.isHost) return;
-  if (d.map) lobby.map = knownMap(d.map);
+  if (d.map) {
+    const k = knownMap(d.map);
+    lobby.map = k;
+    mapKey = k;
+    const idx = LEVELS.findIndex((m) => m.key === k);
+    if (idx !== -1) {
+      mapRotationIndex = (idx + 1) % LEVELS.length;
+      localStorage.setItem('doodle_rot_idx', String(mapRotationIndex));
+    }
+  }
+  mapRotationTimer = MAP_ROTATION_INTERVAL;
+  mapWarn15 = false;
+  mapWarn5 = false;
   if (d.gameMode) lobby.gameMode = d.gameMode;
   startMatch(!!d.late, d.spawns ? d.spawns[net.id] : d.spawn, d.gameMode || lobby.gameMode);
   if (d.broken) for (const id of d.broken) { const br = level.breakables[id]; if (br) breakProp(br, null, false, true); }
@@ -626,6 +726,7 @@ net.on('start', (d) => {
 net.on('startreq', () => { if (net.isHost && game.state === 'lobby') hostStart(); });
 net.on('end', (d) => endMatch(d));
 net.on('backtolobby', () => { if (!net.isHost) toLobbyScreen(); });
+net.on('maprot', (d) => { if (!net.isHost && d && d.map) applyOnlineMapRotation(knownMap(d.map)); });
 net.on('pickup', (d) => { if (!net.isHost) spawnPickup(d.kind, new THREE.Vector3().fromArray(d.pos), d.id); });
 net.on('taken', (d) => { const p = pickups.find((x) => x.id === d.id); if (p) removePickup(p); });
 net.on('take', (d) => { if (!net.isHost) return; const p = pickups.find((x) => x.id === d.id); if (p) { removePickup(p); net.send('taken', { id: d.id }); } });
@@ -761,19 +862,57 @@ function wireName(box) {
 function checkpointHTML() {
   if (checkpoint < 5) return '';
   let h = '<div class="checkpoints"><span>Puntos de control</span>';
-  for (let w = 5; w <= checkpoint; w += 5) h += `<button type="button" data-cp="${w}">Oleada ${w}</button>`;
+for (let w = 5; w <= checkpoint; w += 5) h += `<button type="button" data-cp="${w}">Oleada ${w}</button>`;
   return h + '</div>';
 }
 function wireCheckpoints(onGo) { const box = hud.el.panel.querySelector('.checkpoints'); if (!box) return; box.addEventListener('click', (e) => { e.stopPropagation(); const b = e.target.closest('button'); if (b) onGo(Number(b.dataset.cp)); }); }
 const mapName = (k) => (LEVELS.find((m) => m.key === k) || LEVELS[0]).name;
 function mapHTML(sel, canPick) { if (LEVELS.length < 2) return ''; return `<div class="mapsel" id="mapsel"><span>Mapa</span>${LEVELS.map((m) => `<button type="button" class="mapbtn${m.key === sel ? ' on' : ''}" data-map="${m.key}" ${canPick ? '' : 'disabled'}>${m.name}<i>${m.blurb}</i></button>`).join('')}</div>`; }
-function wireMap(onPick) { const box = hud.el.panel.querySelector('#mapsel'); if (!box) return; box.addEventListener('click', (e) => { e.stopPropagation(); const b = e.target.closest('.mapbtn'); if (b && !b.disabled) onPick(b.dataset.map); }); }
+function wireMap(onPick) {
+  const box = hud.el.panel.querySelector('#mapsel'); if (!box) return;
+  box.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const b = e.target.closest('.mapbtn');
+    if (b && !b.disabled) {
+      userExplicitlyPickedMap = true;
+      const k = b.dataset.map;
+      const idx = LEVELS.findIndex((m) => m.key === k);
+      if (idx !== -1) {
+        mapRotationIndex = (idx + 1) % LEVELS.length;
+        localStorage.setItem('doodle_rot_idx', String(mapRotationIndex));
+      }
+      onPick(k);
+    }
+  });
+}
+function wireControlsTabs(root = hud.el.panel) {
+  if (!root) return;
+  const ctrlBox = root.querySelector('.ctrl-box');
+  if (ctrlBox) {
+    ctrlBox.addEventListener('click', (e) => e.stopPropagation());
+    ctrlBox.addEventListener('keydown', (e) => e.stopPropagation());
+  }
+  const tabs = root.querySelectorAll('.ctrl-tab');
+  if (!tabs.length) return;
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const target = tab.dataset.tab;
+      root.querySelectorAll('.ctrl-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === target));
+      const kbPane = root.querySelector('#ctrlPaneKb');
+      const padPane = root.querySelector('#ctrlPanePad');
+      if (kbPane) kbPane.classList.toggle('active', target === 'kb');
+      if (padPane) padPane.classList.toggle('active', target === 'pad');
+    });
+  });
+}
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
 function mainHTML() {
+  const curControls = getControlsHTML(input.usingGamepad ? 'pad' : 'kb');
   return `<h1>Distrito Garabato</h1><h2>Un shooter de supervivencia dibujado a mano</h2>
     <div class="mainbtns"><button type="button" class="start" id="soloBtn">Jugar en solitario<i>Un jugador · Resiste oleadas de enemigos</i></button><button type="button" id="onlineBtn">Jugar en línea<i>Todos contra todos · Hasta 10 jugadores</i></button></div>
-    ${mapHTML(mapKey, true)}${CONTROLS_HTML}${settingsHTML()}${checkpointHTML()}${best ? `<div class="beststat">Récord: ${best}</div>` : ''}`;
+    ${mapHTML(mapKey, true)}${curControls}${settingsHTML()}${checkpointHTML()}${best ? `<div class="beststat">Récord: ${best}</div>` : ''}`;
 }
 function onlineHTML() {
   return `<h1>Jugar en línea</h1><h2>Todos contra todos · Primero a ${FFA_TARGET} bajas · Hasta 10 jugadores</h2>
@@ -848,24 +987,35 @@ function wireOnline() {
     });
   }
   box.querySelectorAll('.modebtn').forEach((b) => {
-    b.addEventListener('click', () => {
-      if (!net.isHost) return;
-      lobby.gameMode = b.dataset.mode;
-      broadcastLobby();
+    b.addEventListener('click', (e) => {
+      e.stopPropagation(); if (!net.isHost) return;
+      lobby.gameMode = b.dataset.mode; broadcastLobby(); renderLobby();
     });
   });
   box.querySelectorAll('.teambtn').forEach((b) => {
-    b.addEventListener('click', () => {
-      setLocalTeam(b.dataset.team);
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const t = b.dataset.team;
+      if (t === 'blue' || t === 'red') setMyTeam(t);
     });
   });
   if (q('quickBtn')) q('quickBtn').addEventListener('click', () => { lockButtons(box); quickPlay(); });
-  if (q('createBtn')) q('createBtn').addEventListener('click', () => { lockButtons(box); createLobby(box.querySelector('input[name=vis]:checked').value === 'public'); });
-  if (q('joinBtn')) { q('joinBtn').addEventListener('click', () => { const c = q('codeBox').value.trim().toUpperCase(); if (!c) { setStatus('Introduce el código de sala que te dio tu amigo'); return; } lockButtons(box); joinLobby(c); }); q('codeBox').addEventListener('keydown', (e) => { if (e.key === 'Enter') q('joinBtn').click(); }); }
+  if (q('createBtn')) q('createBtn').addEventListener('click', () => {
+    lockButtons(box);
+    const pub = box.querySelector('input[name=vis]:checked')?.value === 'public';
+    createLobby(pub);
+  });
+  if (q('joinBtn')) q('joinBtn').addEventListener('click', () => {
+    const c = (q('codeBox')?.value || '').trim();
+    if (!c) { setStatus('Escribe un código de sala'); return; }
+    lockButtons(box); joinLobby(c);
+  });
+  if (q('codeBox')) q('codeBox').addEventListener('keydown', (e) => { if (e.key === 'Enter') q('joinBtn').click(); });
+  if (q('refreshBtn')) q('refreshBtn').addEventListener('click', () => refreshLobbies());
   if (q('rejoinBtn')) q('rejoinBtn').addEventListener('click', () => { const c = lobby.rejoinCode; lobby.rejoinCode = null; lockButtons(box); joinLobby(c); });
-  if (q('backBtn')) q('backBtn').addEventListener('click', () => { lobby.status = ''; lobby.rejoinCode = null; screen = 'main'; showStart(); });
-  if (q('refreshBtn')) { q('refreshBtn').addEventListener('click', () => refreshLobbies()); if (!lobbyList && !listBusy) refreshLobbies(); }
-  if (q('lobbyRows')) q('lobbyRows').addEventListener('click', (e) => { const b = e.target.closest('button[data-join]'); if (b) { lockButtons(box); joinLobby(b.dataset.join); } });
+  if (q('backBtn')) q('backBtn').addEventListener('click', () => { screen = 'main'; showStart(); });
+  const rows = q('lobbyRows');
+  if (rows) rows.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b && b.dataset.join) { lockButtons(box); joinLobby(b.dataset.join); } });
   wireMap((k) => { if (net.isHost) { lobby.map = k; broadcastLobby(); } });
   if (q('startBtn')) q('startBtn').addEventListener('click', () => { if (net.isHost) hostStart(); else { net.send('startreq', {}); setStatus('Solicitando al anfitrión comenzar…'); } });
   if (q('leaveBtn')) q('leaveBtn').addEventListener('click', () => { lobby.rejoinCode = null; leaveOnline(''); });
@@ -879,22 +1029,24 @@ function showStart() {
   const html = screen === 'lobby' ? lobbyHTML() : screen === 'online' ? onlineHTML() : mainHTML();
   hud.showScreen(html);
   const p = hud.el.panel;
+  wireControlsTabs(p);
   if (screen === 'main') {
-    wireSettings(); wireCheckpoints((w) => beginAtWave(w)); wireMap((k) => { mapKey = k; localStorage.setItem('doodle_map', k); showStart(); });
+    wireSettings(); wireCheckpoints((w) => beginAtWave(w)); wireMap((k) => { mapKey = k; localStorage.setItem('doodle_map', k); setLevel(k, false, true); showStart(); });
     p.querySelector('#soloBtn').addEventListener('click', (e) => { e.stopPropagation(); begin(); });
     p.querySelector('#onlineBtn').addEventListener('click', (e) => { e.stopPropagation(); screen = 'online'; showStart(); });
   } else wireOnline();
 }
 function showPause() {
+  const curControls = getControlsHTML(input.usingGamepad ? 'pad' : 'kb');
   if (online()) {
     const isTdm = (game.mode === 'tdm');
     const title = isTdm ? 'Duelo por Equipos' : 'Todos contra todos';
     const content = isTdm ? boardHTML() : `<div class="scoreboard">${sortedScores().map(([id, s]) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}</span><span>${s.kills} bajas · ${s.deaths} muertes</span></div>`).join('')}</div>`;
-    hud.showScreen(`<h1>Menú</h1><h2>${title} · Sala ${String(net.aliasCode || net.code || '').replace(/-\d+$/, '')}</h2>${content}${CONTROLS_HTML}${settingsHTML()}<div class="online" id="online"><div class="row"><button type="button" class="alt" id="leaveBtn">Abandonar partida</button></div></div><div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para reanudar</div>`);
-    wireSettings(); wireOnline(); return;
+    hud.showScreen(`<h1>Menú</h1><h2>${title} · Sala ${String(net.aliasCode || net.code || '').replace(/-\d+$/, '')}</h2>${content}${curControls}${settingsHTML()}<div class="online" id="online"><div class="row"><button type="button" class="alt" id="leaveBtn">Abandonar partida</button></div></div><div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para reanudar</div>`);
+    wireSettings(); wireControlsTabs(); wireOnline(); return;
   }
-  hud.showScreen(`<h1>Pausa</h1><h2>Oleada ${game.wave} · Puntos ${game.score}</h2>${CONTROLS_HTML}${settingsHTML()}${menuBtnHTML()}<div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para reanudar</div>`);
-  wireSettings(); wireMenuBtn();
+  hud.showScreen(`<h1>Pausa</h1><h2>Oleada ${game.wave} · Puntos ${game.score}</h2>${curControls}${settingsHTML()}${menuBtnHTML()}<div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para reanudar</div>`);
+  wireSettings(); wireControlsTabs(); wireMenuBtn();
 }
 function showClickToPlay() { hud.showScreen(`<h1>Partida iniciada</h1><h2>${game.mode === 'tdm' ? 'Duelo por Equipos · Primero a ' + TDM_TARGET + ' bajas' : 'Todos contra todos · Primero a ' + FFA_TARGET + ' bajas'}</h2><div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para entrar al combate</div>`); }
 function showDead() {
@@ -904,11 +1056,15 @@ function showDead() {
 }
 function menuBtnHTML() { return '<div class="online menubtn"><div class="row"><button type="button" class="alt" id="menuBtn">Menú principal</button></div></div>'; }
 function wireMenuBtn() { const b = hud.el.panel.querySelector('#menuBtn'); if (b) b.addEventListener('click', (e) => { e.stopPropagation(); toMainMenu(); }); }
-function toMainMenu() { history.replaceState(null, '', window.location.pathname); game.state = 'start'; game.mode = 'solo'; game.menu = false; setArena(false); resetGame(); audio.reelLoop(false); input.exitLock(); hud.setGameplayVisible(false); screen = 'main'; showStart(); }
+function toMainMenu() {
+  mapRotationTimer = MAP_ROTATION_INTERVAL; mapWarn15 = false; mapWarn5 = false;
+  history.replaceState(null, '', window.location.pathname); game.state = 'start'; game.mode = 'solo'; game.menu = false; setArena(false); resetGame(); audio.reelLoop(false); input.exitLock(); hud.setGameplayVisible(false); screen = 'main'; showStart();
+}
 function toLobbyScreen() { net.inMatch = false; for (const r of remote.values()) r.lastSeen = performance.now(); setArena(true); resetGame(); game.state = 'lobby'; game.over = null; game.menu = false; hud.setGameplayVisible(false); hud.setBoard(null); screen = 'lobby'; showStart(); }
 
 // ---------------- run control ----------------
 function resetGame() {
+  mapRotationTimer = MAP_ROTATION_INTERVAL; mapWarn15 = false; mapWarn5 = false;
   if (level.breakables.some((b) => !b.alive)) setLevel(loadedKey, arenaLoaded, true);
   enemies.clear(); effects.clear(); for (const p of pickups) R.scene.remove(p.mesh); pickups.length = 0; pickupClock = 0;
   player.maxHp = online() ? 110 : 120; player.regenDelay = online() ? 4 : 4.5; player.regenRate = online() ? 14 : 11;
@@ -916,8 +1072,27 @@ function resetGame() {
   game.score = 0; game.kills = 0; game.combo = 0; game.wave = 0; game.intermission = 0; game.queue = []; game.time = 0; game.over = null; game.matchT = 0; hud.setScore(0, 0); hud.setTimer(''); hud.setPvpScore(null); hud.setTdmScore(false, 0, 0, 0); hud.setWave(1, 0); hud.setBoard(null);
 }
 function beginCommon() { audio.init(); audio.resume(); if (!input.usingGamepad) input.requestLock(); if (musicWanted && !audio.musicPlaying) audio.musicOn(true); hud.hideScreen(); hud.setGameplayVisible(true); game.menu = false; }
-function begin() { game.mode = 'solo'; setArena(false); beginCommon(); if (game.state === 'start' || game.state === 'dead') { resetGame(); startWave(1); } game.state = 'play'; }
-function beginAtWave(n) { game.mode = 'solo'; setArena(false); beginCommon(); resetGame(); startWave(n); game.state = 'play'; }
+function begin() {
+  game.mode = 'solo'; setArena(false); beginCommon();
+  if (game.state === 'start' || game.state === 'dead') {
+    rotateStartingMap();
+    resetGame();
+    startWave(1);
+  }
+  game.state = 'play';
+}
+function beginAtWave(n) {
+  game.mode = 'solo'; setArena(false); beginCommon();
+  if (!userExplicitlyPickedMap) {
+    const nextKey = getNextRotatedMapKey();
+    mapKey = nextKey;
+    localStorage.setItem('doodle_map', nextKey);
+    setLevel(nextKey, false, true);
+  }
+  userExplicitlyPickedMap = false;
+  mapRotationTimer = MAP_ROTATION_INTERVAL; mapWarn15 = false; mapWarn5 = false;
+  resetGame(); startWave(n); game.state = 'play';
+}
 function jumpToWave(n) { enemies.clear(); effects.clear(); enemies.mods.speed = 1; enemies.mods.damage = 1; endFocus(); game.intermission = 0; game.queue = []; startWave(n); hud.hideScreen(); hud.setGameplayVisible(true); game.state = 'play'; game.menu = false; audio.reelLoop(false); }
 function hostStart() {
   if (lobby.gameMode === 'tdm') {
@@ -927,7 +1102,15 @@ function hostStart() {
   }
   scores.clear();
   for (const [id, p] of lobby.players) scores.set(id, { name: p.name, kills: 0, deaths: 0, team: p.team || 'blue' });
-  // deal everyone a different spot, shuffled so the same people do not always start together
+
+  if (!userExplicitlyPickedMap) {
+    const nextKey = getNextRotatedMapKey();
+    lobby.map = nextKey;
+    mapKey = nextKey;
+  }
+  userExplicitlyPickedMap = false;
+  mapRotationTimer = MAP_ROTATION_INTERVAL; mapWarn15 = false; mapWarn5 = false;
+
   setArena(true); const order = spawnSpots().map((_, i) => i); for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
   const spawns = {}; [...lobby.players.keys()].forEach((id, i) => { spawns[id] = order[i % order.length]; });
   net.send('start', { spawns, map: lobby.map || mapKey, gameMode: lobby.gameMode || 'ffa' });
@@ -936,6 +1119,7 @@ function hostStart() {
 }
 function startMatch(late, spawnIdx, mode = lobby.gameMode || 'ffa') {
   net.inMatch = true; game.mode = mode; setArena(true); resetGame(); matchLeft = FFA_TIME; clockT = 0; game.clockStarted = false;
+  mapRotationTimer = MAP_ROTATION_INTERVAL; mapWarn15 = false; mapWarn5 = false;
   if (game.mode === 'tdm') {
     teamKills.blue = 0; teamKills.red = 0;
     const myLobby = lobby.players.get(net.id);
@@ -974,7 +1158,19 @@ hud.onScreenClick = () => {
 };
 canvas.addEventListener('click', () => { if (game.state === 'play' && !game.menu && !input.pointerLocked && !input.usingGamepad) input.requestLock(); });
 input.onLockChange = (locked) => { if (!locked && (game.state === 'play' || (game.state === 'dying' && online())) && !game.menu && !input.usingGamepad) pause(); };
-input.onDeviceChange = (pad) => { hud.setDevice(pad); hud.setWeapon(player.weapon.name, player.weapon.hint); };
+input.onDeviceChange = (pad) => {
+  hud.setDevice(pad);
+  hud.setWeapon(player.weapon.name, player.weapon.hint);
+  const target = pad ? 'pad' : 'kb';
+  const root = hud.el.panel;
+  if (root) {
+    root.querySelectorAll('.ctrl-tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === target));
+    const kbPane = root.querySelector('#ctrlPaneKb');
+    const padPane = root.querySelector('#ctrlPanePad');
+    if (kbPane) kbPane.classList.toggle('active', target === 'kb');
+    if (padPane) padPane.classList.toggle('active', target === 'pad');
+  }
+};
 window.addEventListener('pagehide', () => { if (net.active) net.leave(); });
 // browsers only let audio start on a gesture; any press wakes the context if it went to sleep
 for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => { audio.init(); audio.resume(); }, { passive: true });
@@ -1022,6 +1218,37 @@ function step(now) {
     player.update(sdt); enemies.update(sdt); effects.update(sdt); updatePickups(sdt); netUpdate(dt);
     if (st === 'play' && !online()) updateWaves(sdt);
     if (online()) updateArenaPickups(dt);
+    if (st === 'play' && !game.menu) {
+      const isSolo = !online();
+      const isHost = online() && net.active && net.isHost;
+      if (isSolo || isHost) {
+        mapRotationTimer -= dt;
+        const nextKey = LEVELS[mapRotationIndex % LEVELS.length].key;
+        const nextName = mapName(nextKey);
+
+        if (mapRotationTimer <= 15 && !mapWarn15) {
+          mapWarn15 = true;
+          hud.message('🗺️ Próxima rotación de mapa', `En 15s el combate se traslada a: ${nextName}`, 4);
+          if (online()) net.send('feed', { text: `🗺️ Rotación de mapa en 15s: ${nextName}` });
+        } else if (mapRotationTimer <= 5 && !mapWarn5) {
+          mapWarn5 = true;
+          hud.tip(`⏳ Cambiando a ${nextName} en 5 segundos...`, 4.5);
+        }
+
+        if (mapRotationTimer <= 0) {
+          mapRotationTimer = MAP_ROTATION_INTERVAL;
+          mapWarn15 = false;
+          mapWarn5 = false;
+          if (online()) {
+            const rotKey = getNextRotatedMapKey();
+            net.send('maprot', { map: rotKey });
+            applyOnlineMapRotation(rotKey);
+          } else {
+            rotateMapInGame();
+          }
+        }
+      }
+    }
     if (game.comboT > 0) { game.comboT -= sdt; if (game.comboT <= 0) { game.combo = 0; hud.setScore(game.score, 0); } }
     if (st === 'dying') {
       game.deathT += dt;
