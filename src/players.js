@@ -8,7 +8,7 @@ import { buildHumanoid, buildWeaponProp } from './enemies.js';
 import { clamp, damp, angleLerp, wrapAngle } from './util.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
-const WEAPON_KINDS = ['rifle', 'shotgun', 'sniper', 'blade'];
+const WEAPON_KINDS = ['rifle', 'shotgun', 'sniper', 'smg', 'revolver', 'launcher', 'katana'];
 const HIT = [['head', 0.3], ['torso', 0.33], ['hips', 0.2], ['armL', 0.11], ['armR', 0.11], ['foreL', 0.1], ['foreR', 0.1], ['legL', 0.13], ['legR', 0.13], ['shinL', 0.11], ['shinR', 0.11]];
 
 // what a player broadcasts about itself, ~20 times a second:
@@ -55,7 +55,12 @@ export class RemotePlayer {
       this.mat = makeInkMaterial({ ink: newInk, shadeScale: 0, shadeBias: 1 });
       if (this.root && !this.corpse) {
         this.ctx.scene.remove(this.root);
+        const oldW = this.weaponIndex;
         this._buildModel();
+        if (oldW >= 0) {
+          this.weaponIndex = -1;
+          this.setWeapon(oldW);
+        }
         this.root.visible = true;
       }
     }

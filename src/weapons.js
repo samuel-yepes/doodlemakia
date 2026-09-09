@@ -1,6 +1,6 @@
 // First-person view models + firing logic: rifle, shotgun, revolver (hitscan) and katana.
 import * as THREE from 'three';
-import { makeInkMaterial, INK } from './render.js';
+import { makeInkMaterial, setInk, INK } from './render.js';
 import { SEE_THROUGH } from './physics.js';
 import { rand, clamp, damp, lerp, Spring3, TAU } from './util.js';
 import { audio } from './audio.js';
@@ -34,6 +34,10 @@ class ViewModel {
     this.recoil = new Spring3(260, 18); this.recoilRot = new Spring3(220, 16);
     this.swayPos = new THREE.Vector3(); this.swayRot = new THREE.Vector3();
     this.aimAmt = 0; this.sprintAmt = 0; this.equipT = 0;
+  }
+  setTeamInk(ink) {
+    this.teamInk = ink;
+    if (this.mat) setInk(this.mat, ink);
   }
   setSight(x, y, z, dist) { this.aimPos.set(-x * this.scale, -y * this.scale, -z * this.scale - dist); }
   equip() { this.equipT = 0; this.root.visible = true; }
@@ -162,9 +166,9 @@ export class Gun extends ViewModel {
       end = hitE.point; const crit = hitE.part === 'head'; let d = this.damage * (crit ? this.headMul : 1);
       if (this.falloff) d *= clamp(1 - (hitE.dist - this.falloff[0]) / (this.falloff[1] - this.falloff[0]), this.falloff[2], 1);
       ctx.enemies.damage(hitE.enemy, d, { point: hitE.point, dir, part: hitE.part, source: this.kind, crit }); hit = true;
-    } else if (hitW) { end = hitW.point; ctx.effects.bulletImpact(hitW.point, hitW.normal, INK.BLUE); if (Math.random() < 0.25) audio.ricochet(hitW.point); }
+    } else if (hitW) { end = hitW.point; ctx.effects.bulletImpact(hitW.point, hitW.normal, this.mat ? this.mat.inkId : INK.BLUE); if (Math.random() < 0.25) audio.ricochet(hitW.point); }
     else end = origin.clone().addScaledVector(dir, 300);
-    this.muzzle.getWorldPosition(_v); ctx.effects.tracer(_v, end, INK.BLUE, this.tracer, 0.05);
+    this.muzzle.getWorldPosition(_v); ctx.effects.tracer(_v, end, this.mat ? this.mat.inkId : INK.BLUE, this.tracer, 0.05);
     if (ctx.onShot) ctx.onShot(end);
     return hit;
   }
@@ -328,6 +332,7 @@ export class Launcher extends Gun {
 export class Katana extends ViewModel {
   constructor(ctx) {
     super(ctx); this.name = 'Katana'; this.hint = 'Corta · Mantén apuntar para bloquear y desviar balas'; this.kind = 'katana';
+    this.mat = makeInkMaterial({ ink: INK.BLUE }); this.dark = makeInkMaterial({ ink: INK.BLACK });
     this.basePos.set(0.27, -0.25, -0.4); this.baseRot.set(0.75, 0.15, -0.35); this.aimPos.copy(this.basePos);
     this.slashT = 0; this.slashDur = 0.27; this.combo = 0; this.comboT = 0; this.blocking = false; this.blockT = 0; this.blockAmt = 0; this.hitDone = false; this.cooldown = 0; this.damage = 75;
     // guard pose: the sword simply comes in close to the face, held upright
@@ -336,7 +341,7 @@ export class Katana extends ViewModel {
     this.build();
   }
   build() {
-    const mat = makeInkMaterial({ ink: INK.BLUE }), dark = makeInkMaterial({ ink: INK.BLACK }); const g = this.root;
+    const mat = this.mat, dark = this.dark; const g = this.root;
     this.blade = bx(0.012, 0.035, 1.0, 0, 0, -0.55, mat, g); bx(0.012, 0.02, 0.08, 0, 0.007, -1.07, mat, g).rotation.x = 0.3;
     bx(0.1, 0.1, 0.02, 0, 0, -0.05, dark, g); bx(0.03, 0.036, 0.3, 0, 0, 0.12, dark, g);
     for (let i = 0; i < 6; i++) bx(0.036, 0.04, 0.02, 0, 0, 0.02 + i * 0.045, mat, g);
@@ -376,11 +381,12 @@ export class Katana extends ViewModel {
     audio.katanaSwing(); this.ctx.player.kickFov(2);
     if (st.sprinting || !st.grounded) this.ctx.player.lunge(5.5);
     const P = this.ctx.player, s = this.combo % 2 === 0 ? -1 : 1; const up = _v2.set(0, 1, 0);
+    const tracerInk = this.mat ? this.mat.inkId : INK.BLUE;
     for (let i = 0; i < 9; i++) {
       const a = (-1.1 + 2.2 * i / 8) * s; const b = a + 0.12 * s;
       const pa = P.eye.clone().addScaledVector(P.forward, 1.3).addScaledVector(P.right, Math.cos(a) * 0.9 * s).addScaledVector(up, Math.sin(a) * 0.55 - 0.1);
       const pb = P.eye.clone().addScaledVector(P.forward, 1.3).addScaledVector(P.right, Math.cos(b) * 0.9 * s).addScaledVector(up, Math.sin(b) * 0.55 - 0.1);
-      this.ctx.effects.tracer(pa, pb, INK.BLUE, 0.03 - 0.002 * i, 0.12 + i * 0.01);
+      this.ctx.effects.tracer(pa, pb, tracerInk, 0.03 - 0.002 * i, 0.12 + i * 0.01);
     }
   }
   update(dt, st) {

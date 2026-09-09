@@ -1,8 +1,14 @@
 // DOM heads-up display drawn in "pen" style (multiplied over the paper canvas).
+import * as THREE from 'three';
+import { clamp } from './util.js';
+
+const _vTag = new THREE.Vector3(), _toTag = new THREE.Vector3(), _camFwd = new THREE.Vector3();
+
 export class HUD {
   constructor(root) {
     this.root = root;
     root.innerHTML = `
+      <div class="nametags" id="nametags"></div>
       <div class="scope" id="scope"><div class="mask"></div><div class="ring"></div><div class="cx"></div><div class="cy"></div><div class="dot"></div></div>
       <div class="focus-meter" id="focusmeter"><div class="fm-label">Katana</div><div class="fm-tube"><div class="fm-fill" id="fmfill"></div><i class="fm-f1"></i><i class="fm-f2"></i><i class="fm-f3"></i></div><div class="fm-ready" id="fmready">Corte listo</div></div>
       <div class="focus-mark" id="focusmark"><i></i><i></i><i></i><i></i></div>
@@ -26,8 +32,9 @@ export class HUD {
       <div class="killfeed" id="killfeed"></div>
       <div class="screen" id="screen"><div class="panel" id="panel"></div></div>`;
     const q = (id) => root.querySelector('#' + id);
-    this.el = { crosshair: q('crosshair'), gret: q('gret'), hitmarker: q('hitmarker'), dmg: q('dmg'), score: q('score'), combo: q('combo'), wave: q('wave'), modifier: q('modifier'), left: q('left'), timer: q('timer'), hpfill: q('hpfill'), hpnum: q('hpnum'), mag: q('mag'), reserve: q('reserve'), reloading: q('reloading'), tally: q('tally'), weapon: q('weapon'), hint: q('hint'), slots: q('slots'), tip: q('tip'), msg: q('msg'), msgsub: q('msgsub'), killfeed: q('killfeed'), screen: q('screen'), panel: q('panel'), nades: q('nades'), scope: q('scope'), focusmark: q('focusmark'), focusmeter: q('focusmeter'), fmfill: q('fmfill'), bossbar: q('bossbar'), bossname: q('bossname'), bossfill: q('bossfill'), pvpscore: q('pvpscore'), board: q('board'), gstam: q('gstam'), gstamfill: q('gstamfill'), tdmHeader: q('tdmHeader'), blueKills: q('blueKills'), redKills: q('redKills'), tdmTarget: q('tdmTarget'), netStatus: q('netStatus'), netStatusText: q('netStatusText') };
+    this.el = { crosshair: q('crosshair'), gret: q('gret'), hitmarker: q('hitmarker'), dmg: q('dmg'), score: q('score'), combo: q('combo'), wave: q('wave'), modifier: q('modifier'), left: q('left'), timer: q('timer'), hpfill: q('hpfill'), hpnum: q('hpnum'), mag: q('mag'), reserve: q('reserve'), reloading: q('reloading'), tally: q('tally'), weapon: q('weapon'), hint: q('hint'), slots: q('slots'), tip: q('tip'), msg: q('msg'), msgsub: q('msgsub'), killfeed: q('killfeed'), screen: q('screen'), panel: q('panel'), nades: q('nades'), scope: q('scope'), focusmark: q('focusmark'), focusmeter: q('focusmeter'), fmfill: q('fmfill'), bossbar: q('bossbar'), bossname: q('bossname'), bossfill: q('bossfill'), pvpscore: q('pvpscore'), board: q('board'), gstam: q('gstam'), gstamfill: q('gstamfill'), tdmHeader: q('tdmHeader'), blueKills: q('blueKills'), redKills: q('redKills'), tdmTarget: q('tdmTarget'), netStatus: q('netStatus'), netStatusText: q('netStatusText'), nametags: q('nametags') };
     this._msgT = 0; this._scope = false; this._nades = -1; this._pad = false; this.onDevice = null; this._fmShow = false; this._fmFrac = -1; this._fmReady = false; this._lastTally = -1; this._lastSlots = ''; this._ads = false; this._mode = ''; this.onScreenClick = null; this._tipT = 0;
+    this._nameTags = new Map();
     this.el.screen.addEventListener('click', () => { if (this.onScreenClick) this.onScreenClick(); });
   }
   // katana charge gauge: fills with katana kills, catches fire when a focus slash is ready
@@ -99,7 +106,90 @@ export class HUD {
   damageFrom(angle) { const i = document.createElement('i'); i.style.transform = `rotate(${(angle * 180 / Math.PI).toFixed(1)}deg)`; this.el.dmg.appendChild(i); setTimeout(() => i.remove(), 1000); }
   showScreen(html) { this.el.panel.innerHTML = html; this.el.screen.classList.add('show'); }
   hideScreen() { this.el.screen.classList.remove('show'); }
-  setGameplayVisible(v) { this.root.classList.toggle('nogame', !v); }
+  setGameplayVisible(v) {
+    this.root.classList.toggle('nogame', !v);
+    if (!v) this.clearNametags();
+  }
+  updateNametags(remotes, camera, world, localPlayer) {
+    if (!this.el.nametags) return;
+    const activeIds = new Set();
+    const w = window.innerWidth, h = window.innerHeight;
+    const camPos = camera.position;
+    camera.getWorldDirection(_camFwd);
+
+    for (const [id, rp] of remotes) {
+      if (!rp || !rp.alive || rp.away || !rp.root || !rp.root.visible) continue;
+      activeIds.add(id);
+
+      _vTag.set(rp.body.pos.x, rp.body.pos.y + (rp.crouching ? 1.6 : 2.3), rp.body.pos.z);
+      _toTag.subVectors(_vTag, camPos);
+      const dist = _toTag.length();
+
+      if (_toTag.dot(_camFwd) <= 0.1 || dist > 85) {
+        const el = this._nameTags.get(id);
+        if (el) el.style.display = 'none';
+        continue;
+      }
+
+      _vTag.project(camera);
+      if (_vTag.z > 1.0) {
+        const el = this._nameTags.get(id);
+        if (el) el.style.display = 'none';
+        continue;
+      }
+
+      const sx = (_vTag.x * 0.5 + 0.5) * w;
+      const sy = (-_vTag.y * 0.5 + 0.5) * h;
+
+      _toTag.normalize();
+      const hit = world ? world.raycast(camPos, _toTag, dist - 0.5) : null;
+      const isTeammate = localPlayer && (localPlayer.team === rp.team);
+
+      if (hit && !isTeammate) {
+        const el = this._nameTags.get(id);
+        if (el) el.style.display = 'none';
+        continue;
+      }
+
+      let el = this._nameTags.get(id);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = 'nametag';
+        el.innerHTML = '<span class="nt-header"><i class="nt-dot"></i><b class="nt-name"></b></span><div class="nt-bar"><i class="nt-fill"></i></div>';
+        this.el.nametags.appendChild(el);
+        this._nameTags.set(id, el);
+      }
+
+      const teamColor = (rp.team === 'red' || rp.ink === 1) ? 'red' : 'blue';
+      el.className = `nametag team-${teamColor}${hit ? ' occluded' : ''}`;
+
+      const nameEl = el.querySelector('.nt-name');
+      if (nameEl && nameEl.textContent !== rp.name) nameEl.textContent = rp.name || 'Garabato';
+
+      const hpFrac = clamp((rp.hp || 0) / (rp.maxHp || 100), 0, 1);
+      const fillEl = el.querySelector('.nt-fill');
+      if (fillEl) fillEl.style.width = (hpFrac * 100).toFixed(0) + '%';
+
+      const scale = clamp(1.0 - (dist - 10) * 0.01, 0.68, 1.15);
+      const opacity = hit ? 0.35 : clamp(1.0 - (dist - 55) / 30, 0.3, 1.0);
+
+      el.style.display = 'flex';
+      el.style.opacity = opacity.toFixed(2);
+      el.style.transform = `translate3d(${sx.toFixed(1)}px, ${sy.toFixed(1)}px, 0) translate(-50%, -100%) scale(${scale.toFixed(3)})`;
+    }
+
+    for (const [id, el] of this._nameTags) {
+      if (!activeIds.has(id)) {
+        el.remove();
+        this._nameTags.delete(id);
+      }
+    }
+  }
+  clearNametags() {
+    if (!this._nameTags) return;
+    for (const el of this._nameTags.values()) el.remove();
+    this._nameTags.clear();
+  }
   update(dt) {
     if (this._msgT > 0) { this._msgT -= dt; if (this._msgT <= 0) { this.el.msg.classList.remove('show'); this.el.msgsub.textContent = ''; } }
     if (this._tipT > 0) { this._tipT -= dt; if (this._tipT <= 0) this.el.tip.classList.remove('show'); }

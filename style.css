@@ -247,3 +247,70 @@ button.copied { background: #129040 !important; border-color: #129040 !important
 .team-col.red div { border-bottom-color: rgba(192,48,26,.2); }
 .team-col div.me { font-weight: bold; background: rgba(26,48,192,.08); }
 .team-col.red div.me { background: rgba(192,48,26,.08); }
+
+/* In-game floating nametags */
+.nametags { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 15; }
+.nametag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 10px 4px;
+  background: rgba(250, 248, 238, .96);
+  border: 2.5px solid var(--ink);
+  border-radius: 7px 11px 8px 10px / 10px 8px 11px 7px;
+  box-shadow: 2.5px 2.5px 0 rgba(0, 0, 0, .14);
+  transform-origin: 50% 100%;
+  pointer-events: none;
+  white-space: nowrap;
+  font-family: inherit;
+}
+.nametag.team-blue {
+  border-color: var(--ink);
+  color: var(--ink);
+  box-shadow: 2.5px 2.5px 0 rgba(26, 48, 192, .22);
+}
+.nametag.team-red {
+  border-color: var(--red);
+  color: var(--red);
+  box-shadow: 2.5px 2.5px 0 rgba(208, 32, 48, .25);
+}
+.nametag .nt-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  font-weight: bold;
+  letter-spacing: .5px;
+  line-height: 1.1;
+}
+.nametag .nt-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.nametag .nt-bar {
+  width: 52px;
+  height: 4px;
+  background: rgba(0, 0, 0, .08);
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+.nametag .nt-fill {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: currentColor;
+  transition: width .12s ease-out;
+}
+.nametag.occluded {
+  border-style: dashed;
+  box-shadow: none;
+}

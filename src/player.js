@@ -30,12 +30,19 @@ export class Player {
     this.dashCd = 0; this.airJumps = 1; this.blockCd = 0; this.landGraceT = 0; this.sprintToggle = false; this.lastGround = true; this.airT = 0; this._sprinting = false; this._aiming = false; this._mv = { x: 0, y: 0 };
     this.grapple = { state: 'idle', anchor: new THREE.Vector3(), hook: new THREE.Vector3(), from: new THREE.Vector3(), flyT: 0, flyDur: 0, len: 0, cd: 0, enemy: null, mover: null, blockedT: 0, t: 0, swingT: 0, hopT: 0 };
     this.deathT = 0; this.gravityScale = 1; this.dashLock = false;
-    this.isLocal = true; this.team = 0; this.name = 'you'; this.grenades = 3; this.maxGrenades = 5; this.nades = []; this.canisters = []; this.nadeCd = 0; this.firing = false; this.onThrow = null;
+    this.isLocal = true; this.team = 'blue'; this.name = 'you'; this.grenades = 3; this.maxGrenades = 5; this.nades = []; this.canisters = []; this.nadeCd = 0; this.firing = false; this.onThrow = null;
     const rm = makeInkMaterial({ ink: INK.BLUE, fill: false, shadeBias: -0.3 });
     this.rope = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 6), rm); this.rope.visible = false; ctx.scene.add(this.rope);
     const hm = makeInkMaterial({ ink: INK.BLUE }); this.hookMesh = new THREE.Group();
     this.hookMesh.add(new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.05, 6, 10), hm)); const hb = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08), hm); hb.position.y = -0.2; this.hookMesh.add(hb);
     this.hookMesh.visible = false; ctx.scene.add(this.hookMesh);
+  }
+  setTeam(team) {
+    this.team = team;
+    const ink = (team === 'red' || team === 1) ? INK.RED : INK.BLUE;
+    for (const w of this.weapons) {
+      if (w && w.setTeamInk) w.setTeamInk(ink);
+    }
   }
   reset(pos) {
     this.nadeCharge = 0; this._nadeHeld = false; if (this._arc) this.updateNadeArc(-1); this.grapStam = 1; this.blockHeld = 0;
@@ -327,7 +334,7 @@ export class Player {
   launchCanister(origin, dir) {
     const ctx = this.ctx;
     const g = new THREE.Group();
-    const bodyMat = makeInkMaterial({ ink: INK.BLUE });
+    const bodyMat = makeInkMaterial({ ink: (this.team === 'red' || this.team === 1) ? INK.RED : INK.BLUE });
     const capMat = makeInkMaterial({ ink: INK.ORANGE });
     const darkMat = makeInkMaterial({ ink: INK.BLACK });
     const mainBody = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.26, 8), bodyMat);

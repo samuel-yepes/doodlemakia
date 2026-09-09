@@ -531,7 +531,7 @@ function lobbyRows() { return [...lobby.players.entries()].map(([id, p]) => ({ i
 function broadcastLobby() { net.send('lobby', { players: lobbyRows(), hostId: net.id, isPublic: lobby.isPublic, map: lobby.map || mapKey, gameMode: lobby.gameMode || 'ffa', shown: net.aliasCode || net.code }); renderLobby(); }
 function setLocalTeam(team) {
   myTeam = team;
-  player.team = team;
+  player.setTeam(team);
   const lp = lobby.players.get(net.id);
   if (lp) lp.team = team;
   if (net.isHost) broadcastLobby();
@@ -594,7 +594,7 @@ net.on('lobby', (d) => {
   lobby.order = d.players.map((p) => p.id); lobby.players.clear();
   for (const p of d.players) {
     lobby.players.set(p.id, { name: p.name, team: p.team || 'blue' });
-    if (p.id === net.id && p.team) { myTeam = p.team; player.team = myTeam; }
+    if (p.id === net.id && p.team) { myTeam = p.team; player.setTeam(myTeam); }
   }
   for (const p of d.players) if (p.id !== net.id) addRemote(p.id, p.name, p.team || 'red');
   for (const id of [...remote.keys()]) if (!lobby.players.has(id)) removeRemote(id);
@@ -649,7 +649,8 @@ net.on('shots', (d, from) => {
   const r = remote.get(from); if (!r || !r.root || !r.alive) return;
   _sm.set(r.body.pos.x + r.right.x * 0.3 + r.forward.x * 0.8, r.body.pos.y + 1.35 + r.forward.y * 0.8, r.body.pos.z + r.right.z * 0.3 + r.forward.z * 0.8);
   const th = TRACER_THICK[d.k] || 0.02; const e = d.e || [];
-  for (let i = 0; i + 2 < e.length; i += 3) { _se.set(e[i], e[i + 1], e[i + 2]); effects.tracer(_sm, _se, INK.BLUE, th, 0.06); }
+  const tracerInk = (r.team === 'red' || r.ink === INK.RED) ? INK.RED : INK.BLUE;
+  for (let i = 0; i + 2 < e.length; i += 3) { _se.set(e[i], e[i + 1], e[i + 2]); effects.tracer(_sm, _se, tracerInk, th, 0.06); }
   r.flash(); audio.remoteShot(d.k, _sm);
 });
 net.on('cut', () => { if (player.grapple.state !== 'idle') { player.detachGrapple(false); effects.strokeBurst(player.center, INK.ORANGE, 8, 4, { life: 0.25, size: 0.03 }); hud.tip('Tu cuerda fue cortada', 1.3); input.rumble(0.5, 0.3, 80); } });
@@ -697,6 +698,7 @@ function netUpdate(dt) {
 }
 function leaveOnline(reason) {
   history.replaceState(null, '', window.location.pathname);
+  hud.clearNametags();
   net.leave(); for (const id of [...remote.keys()]) removeRemote(id); lobby.players.clear(); scores.clear(); hud.setBoard(null);
   if (game.state !== 'start') { game.state = 'start'; game.mode = 'solo'; setArena(false); resetGame(); hud.setGameplayVisible(false); }
   game.menu = false; lobby.status = reason || ''; screen = 'online'; showStart();
@@ -799,17 +801,16 @@ function lobbyHTML() {
         <button type="button" class="modebtn${!isTdm ? ' on' : ''}" data-mode="ffa" ${host ? '' : 'disabled'}>Todos contra todos<i>FFA · Sin equipos</i></button>
         <button type="button" class="modebtn${isTdm ? ' on' : ''}" data-mode="tdm" ${host ? '' : 'disabled'}>Duelo por Equipos<i>TDM · Azul vs Rojo</i></button>
       </div>
-      ${isTdm ? `
       <div class="row teampick">
-        <span>Tu Equipo:</span>
+        <span>${isTdm ? 'Tu Equipo:' : 'Tu Color / Equipo:'}</span>
         <div class="teambtns">
           <button type="button" class="teambtn blue${myTeam === 'blue' ? ' on' : ''}" data-team="blue">Equipo Azul</button>
           <button type="button" class="teambtn red${myTeam === 'red' ? ' on' : ''}" data-team="red">Equipo Rojo</button>
         </div>
-      </div>` : ''}
+      </div>
       ${mapHTML(lobby.map || mapKey, host)}
       <div class="hint">${lobby.isPublic ? 'Esta sala es pública: cualquiera puede unirse por partida rápida, código o enlace directo' : 'Sala privada: comparte el código o enlace directo con tus amigos'}</div>
-      <div class="plist">${rows.map((p) => `<div class="${p.id === lobby.hostId ? 'host' : ''}${p.id === net.id ? ' me' : ''}"><span>${esc(p.name)}</span><span>${isTdm ? `<span class="team-badge ${p.team === 'red' ? 'red' : 'blue'}">${p.team === 'red' ? 'Rojo' : 'Azul'}</span>` : ''}${p.id === net.id ? ' (Tú)' : ''}</span></div>`).join('')}</div>
+      <div class="plist">${rows.map((p) => `<div class="${p.id === lobby.hostId ? 'host' : ''}${p.id === net.id ? ' me' : ''}"><span>${esc(p.name)}</span><span><span class="team-badge ${p.team === 'red' ? 'red' : 'blue'}">${p.team === 'red' ? 'Rojo' : 'Azul'}</span>${p.id === net.id ? ' (Tú)' : ''}</span></div>`).join('')}</div>
       <div class="row"><button type="button" class="big" id="startBtn">Comenzar partida</button><button type="button" class="alt" id="leaveBtn">Salir</button></div>
       <div class="status" id="status">${esc(lobby.status || '')}</div><div class="hint">Cualquiera puede iniciar · ${n < 2 ? 'Otros pueden unirse tras empezar' : n + ' jugadores listos'}</div>
     </div>`;
@@ -911,7 +912,7 @@ function resetGame() {
   if (level.breakables.some((b) => !b.alive)) setLevel(loadedKey, arenaLoaded, true);
   enemies.clear(); effects.clear(); for (const p of pickups) R.scene.remove(p.mesh); pickups.length = 0; pickupClock = 0;
   player.maxHp = online() ? 110 : 120; player.regenDelay = online() ? 4 : 4.5; player.regenRate = online() ? 14 : 11;
-  player.reset(level.playerStart); player.name = myName; player.team = myTeam; player.lastHitBy = null; player.lastHit = null; enemies.mods.speed = 1; enemies.mods.damage = 1; hud.setModifier(''); hud.setBoss(null, null); game.boss = null; endFocus(); game.katanaStreak = 0;
+  player.reset(level.playerStart); player.name = myName; player.setTeam(myTeam); player.lastHitBy = null; player.lastHit = null; enemies.mods.speed = 1; enemies.mods.damage = 1; hud.setModifier(''); hud.setBoss(null, null); game.boss = null; endFocus(); game.katanaStreak = 0;
   game.score = 0; game.kills = 0; game.combo = 0; game.wave = 0; game.intermission = 0; game.queue = []; game.time = 0; game.over = null; game.matchT = 0; hud.setScore(0, 0); hud.setTimer(''); hud.setPvpScore(null); hud.setTdmScore(false, 0, 0, 0); hud.setWave(1, 0); hud.setBoard(null);
 }
 function beginCommon() { audio.init(); audio.resume(); if (!input.usingGamepad) input.requestLock(); if (musicWanted && !audio.musicPlaying) audio.musicOn(true); hud.hideScreen(); hud.setGameplayVisible(true); game.menu = false; }
@@ -939,8 +940,8 @@ function startMatch(late, spawnIdx, mode = lobby.gameMode || 'ffa') {
     teamKills.blue = 0; teamKills.red = 0;
     const myLobby = lobby.players.get(net.id);
     if (myLobby && myLobby.team) myTeam = myLobby.team;
-    player.team = myTeam;
   }
+  player.setTeam(myTeam);
   // nobody sends snapshots in the lobby, so the silence clock restarts here or the sweep would drop everyone
   for (const r of remote.values()) {
     r.lastSeen = performance.now();
@@ -1047,6 +1048,8 @@ function step(now) {
   hud.setGrenades(player.grenades); hud.setGrappleStamina(player.grapStam); hud.setHealth(player.hp, player.maxHp); hud.setSpread(w.spreadPx); hud.update(dt);
   if (online()) hud.setFocusMeter(playing, player.grapStam, false, 'Gancho');
   else hud.setFocusMeter(playing && (w.kind === 'katana' || game.katanaStreak > 0 || game.focus.active), game.focus.active ? 1 : clamp(game.katanaStreak / KATANA_CHARGE_KILLS, 0, 1), game.focus.active, 'Katana');
+  if (online() && playing) hud.updateNametags(remote, R.camera, world, player);
+  else hud.clearNametags();
   if (game.boss) { if (game.boss.alive) hud.setBoss(game.boss.T.name, game.boss.hp / game.boss.maxHp); else { hud.setBoss(null, null); game.boss = null; } }
   audio.setIntensity(clamp((enemies.alive + game.queue.length + remote.size * 2) / 12, 0, 1) * (game.intermission > 0 ? 0.25 : 1));
   R.render(game.time, { hurt: player.hurtFx, flash: player.flashFx, slow: scale < 1 ? 1 : 0, lowHp: player.alive && player.hp < 30 ? 1 - player.hp / 30 : 0 });

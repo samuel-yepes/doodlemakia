@@ -67,12 +67,56 @@ function buildHat(headG, mat, solid, T) {
   else if (h === 'crown') { for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU; const sp = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.26, 4), mat); sp.position.set(Math.cos(a) * 0.22, 0.34, Math.sin(a) * 0.22); headG.add(sp); } const b = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.035, 4, 14), mat); b.rotation.x = Math.PI / 2; b.position.y = 0.24; headG.add(b); }
 }
 export function buildWeaponProp(gun, mat, solid, T) {
-  if (T.weapon === 'blade') { bx(0.02, 0.05, 0.95, 0, 0.04, 0.42, mat, gun); bx(0.11, 0.11, 0.03, 0, 0.04, -0.06, solid, gun); bx(0.035, 0.045, 0.24, 0, 0.04, -0.19, solid, gun); }
-  else if (T.weapon === 'shotgun') { bx(0.1, 0.13, 0.66, 0, 0.02, 0.2, mat, gun); const b = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.5, 6), solid); b.rotation.x = Math.PI / 2; b.position.set(0, 0.08, 0.5); gun.add(b); }
-  else if (T.weapon === 'sniper') { bx(0.075, 0.11, 0.6, 0, 0.02, 0.15, mat, gun); const b = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.95, 6), solid); b.rotation.x = Math.PI / 2; b.position.set(0, 0.05, 0.72); gun.add(b); bx(0.06, 0.07, 0.22, 0, 0.13, 0.06, solid, gun); }
-  else if (T.weapon === 'pistol') { bx(0.055, 0.09, 0.3, 0, 0.03, 0.13, mat, gun); bx(0.045, 0.11, 0.055, 0, -0.05, 0, solid, gun); }
-  else if (T.weapon === 'boss') { const pen = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.4, 7), makeInkMaterial({ ink: INK.ORANGE, shadeScale: 0, shadeBias: 1 })); pen.position.y = 0.7; gun.add(pen); const tip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.38, 6), solid); tip.position.y = 2.08; gun.add(tip); const er = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.26, 8), makeInkMaterial({ ink: INK.PINK, shadeScale: 0, shadeBias: 1 })); er.position.y = -0.62; gun.add(er); }
-  else { bx(0.085, 0.12, 0.5, 0, 0.02, 0.16, mat, gun); const b = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.34, 6), solid); b.rotation.x = Math.PI / 2; b.position.set(0, 0.05, 0.52); gun.add(b); bx(0.05, 0.16, 0.09, 0, -0.09, 0.08, mat, gun); }
+  if (T.weapon === 'blade' || T.weapon === 'katana') {
+    bx(0.02, 0.05, 0.95, 0, 0.04, 0.42, mat, gun);
+    bx(0.11, 0.11, 0.03, 0, 0.04, -0.06, solid, gun);
+    bx(0.035, 0.045, 0.24, 0, 0.04, -0.19, mat, gun);
+  }
+  else if (T.weapon === 'shotgun') {
+    bx(0.1, 0.13, 0.66, 0, 0.02, 0.2, mat, gun);
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.5, 6), solid);
+    b.rotation.x = Math.PI / 2; b.position.set(0, 0.08, 0.5); gun.add(b);
+    bx(0.08, 0.09, 0.22, 0, -0.02, 0.28, mat, gun);
+  }
+  else if (T.weapon === 'sniper') {
+    bx(0.075, 0.11, 0.6, 0, 0.02, 0.15, mat, gun);
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.95, 6), solid);
+    b.rotation.x = Math.PI / 2; b.position.set(0, 0.05, 0.72); gun.add(b);
+    bx(0.06, 0.07, 0.22, 0, 0.13, 0.06, mat, gun);
+  }
+  else if (T.weapon === 'smg') {
+    bx(0.07, 0.1, 0.38, 0, 0.02, 0.12, mat, gun);
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.32, 6), solid);
+    b.rotation.x = Math.PI / 2; b.position.set(0, 0.04, 0.44); gun.add(b);
+    const d = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.08, 8), mat);
+    d.rotation.z = Math.PI / 2; d.position.set(0, -0.08, 0.12); gun.add(d);
+  }
+  else if (T.weapon === 'revolver' || T.weapon === 'pistol') {
+    bx(0.055, 0.09, 0.3, 0, 0.03, 0.13, mat, gun);
+    bx(0.045, 0.11, 0.055, 0, -0.05, 0, solid, gun);
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.09, 6), mat);
+    cyl.rotation.x = Math.PI / 2; cyl.position.set(0, 0.035, 0.1); gun.add(cyl);
+  }
+  else if (T.weapon === 'launcher') {
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.65, 8), mat);
+    tube.rotation.x = Math.PI / 2; tube.position.set(0, 0.05, 0.28); gun.add(tube);
+    bx(0.09, 0.12, 0.3, 0, -0.01, 0.1, solid, gun);
+    bx(0.06, 0.15, 0.12, 0, -0.12, 0.05, mat, gun);
+  }
+  else if (T.weapon === 'boss') {
+    const pen = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.4, 7), makeInkMaterial({ ink: INK.ORANGE, shadeScale: 0, shadeBias: 1 }));
+    pen.position.y = 0.7; gun.add(pen);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.38, 6), solid);
+    tip.position.y = 2.08; gun.add(tip);
+    const er = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.26, 8), makeInkMaterial({ ink: INK.PINK, shadeScale: 0, shadeBias: 1 }));
+    er.position.y = -0.62; gun.add(er);
+  }
+  else { // rifle
+    bx(0.085, 0.12, 0.5, 0, 0.02, 0.16, mat, gun);
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.34, 6), solid);
+    b.rotation.x = Math.PI / 2; b.position.set(0, 0.05, 0.52); gun.add(b);
+    bx(0.05, 0.16, 0.09, 0, -0.09, 0.08, mat, gun);
+  }
 }
 
 export function buildHumanoid(mat, solid, T) {
