@@ -42,9 +42,10 @@ export class RemotePlayer {
     const model = buildHumanoid(this.mat, this.solid, this.T);
     this.root = model.root; this.parts = model.parts; this.J = model.J; this.face = model.face;
     this.root.visible = false; this.ctx.scene.add(this.root); this.weaponIndex = -1;
-    // a name tag: a little flag above the head so you know who is who
+    // a name tag: a little flag above the head so you know who is who (hidden in favor of HUD nametags)
     this.tagG = new THREE.Group(); this.root.add(this.tagG); this.tagG.position.y = 2.25;
     const flag = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.02), makeInkMaterial({ ink: this.ink, fill: true, side: THREE.DoubleSide })); this.tagG.add(flag);
+    this.tagG.visible = false;
     this.corpse = false;
   }
   get mesh() { return this.root; }

@@ -129,10 +129,11 @@ export class World {
 
   // Ray vs all boxes (slab test). Returns {dist, point, normal, box} or null.
   raycast(o, d, maxDist = 1000, ignore = null) {
+    const ignoreFn = typeof ignore === 'function' ? ignore : null;
     let best = null, bestT = maxDist, bAxis = -1, bSign = 0;
     const boxes = this.boxes;
     for (let i = 0; i < boxes.length; i++) {
-      const b = boxes[i]; if (ignore && ignore(b)) continue;
+      const b = boxes[i]; if (ignoreFn && ignoreFn(b)) continue;
       let tmin = 0, tmax = bestT, nAxis = -1, nSign = 0, ok = true;
       for (let a = 0; a < 3; a++) {
         const ax = AX[a]; const da = d[ax], oa = o[ax];

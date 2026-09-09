@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { clamp } from './util.js';
 
-const _vTag = new THREE.Vector3(), _toTag = new THREE.Vector3(), _camFwd = new THREE.Vector3();
+const _vTag = new THREE.Vector3(), _toTag = new THREE.Vector3(), _camFwd = new THREE.Vector3(), _tagDir = new THREE.Vector3(), _targetPos = new THREE.Vector3();
 
 export class HUD {
   constructor(root) {
@@ -128,18 +128,21 @@ export class HUD {
       if (!rp || !rp.alive || !mesh || !mesh.visible) continue;
       activeIds.add(rp.id);
 
-      const targetPos = mesh.position.clone();
-      targetPos.y += 2.15;
+      _targetPos.copy(mesh.position);
+      _targetPos.y += 2.15;
 
-      _toTag.subVectors(targetPos, camPos);
+      _toTag.subVectors(_targetPos, camPos);
       const dist = _toTag.length();
-      if (dist > 75 || _camFwd.dot(_toTag.clone().normalize()) <= 0.15) {
+      if (dist < 0.001) continue;
+      _tagDir.copy(_toTag).divideScalar(dist);
+
+      if (dist > 75 || _camFwd.dot(_tagDir) <= 0.15) {
         const el = this._nameTags.get(rp.id);
         if (el) el.style.display = 'none';
         continue;
       }
 
-      _vTag.copy(targetPos).project(camera);
+      _vTag.copy(_targetPos).project(camera);
       if (_vTag.z > 1) {
         const el = this._nameTags.get(rp.id);
         if (el) el.style.display = 'none';
@@ -149,7 +152,7 @@ export class HUD {
       const sx = (_vTag.x * 0.5 + 0.5) * window.innerWidth;
       const sy = (-(_vTag.y * 0.5) + 0.5) * window.innerHeight;
 
-      const hit = world.raycast(camPos, _toTag.clone().normalize(), dist - 0.5, { noPlayer: true });
+      const hit = world.raycast(camPos, _tagDir, dist - 0.5);
       if (hit && dist > 28) {
         const el = this._nameTags.get(rp.id);
         if (el) el.style.display = 'none';
