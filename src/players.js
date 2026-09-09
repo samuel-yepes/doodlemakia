@@ -47,6 +47,19 @@ export class RemotePlayer {
     const flag = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.28, 0.02), makeInkMaterial({ ink: this.ink, fill: true, side: THREE.DoubleSide })); this.tagG.add(flag);
     this.corpse = false;
   }
+  setTeam(team, ink = null) {
+    this.team = team;
+    const newInk = ink != null ? ink : (team === 'red' || team === 1 ? INK.RED : INK.BLUE);
+    if (this.ink !== newInk) {
+      this.ink = newInk;
+      this.mat = makeInkMaterial({ ink: newInk, shadeScale: 0, shadeBias: 1 });
+      if (this.root && !this.corpse) {
+        this.ctx.scene.remove(this.root);
+        this._buildModel();
+        this.root.visible = true;
+      }
+    }
+  }
   // knocked flat with some physics: the whole figure tumbles away as debris (bits come off on a
   // big hit), and a fresh figure is drawn when the player comes back
   ragdoll(dir, over) {

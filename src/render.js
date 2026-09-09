@@ -129,14 +129,17 @@ void main() {
   vec4 su = texture2D(tScene, suv + oy), sd = texture2D(tScene, suv - oy);
   // Edge test in inverse depth (1/d). For ANY plane - including ones seen at a
   // grazing angle, like the floor - 1/d is affine across the screen, so its second
-  // difference is zero there and only real silhouettes register. Comparing it against
-  // 1/d itself makes the test scale invariant, so distant outlines stay as crisp as near ones.
+  // difference is zero there and only real silhouettes register.
+  // Distance-weighted threshold: near covers/structures receive lower threshold & bolder weight,
+  // while distant elements receive softer, sparser lines to eliminate clutter.
   float iw = 1.0 / d;
   float lap = abs(1.0 / linDepth(zl) + 1.0 / linDepth(zr) - 2.0 * iw)
             + abs(1.0 / linDepth(zu) + 1.0 / linDepth(zd) - 2.0 * iw);
-  float edge = smoothstep(0.07, 0.30, lap / (iw + 1e-7));
+  float edgeLo = mix(0.045, 0.095, smoothstep(8.0, 48.0, d));
+  float edgeHi = mix(0.22, 0.38, smoothstep(8.0, 48.0, d));
+  float edge = smoothstep(edgeLo, edgeHi, lap / (iw + 1e-7));
   float nEdge = length(sl.ba - sr.ba) + length(su.ba - sd.ba);
-  edge = max(edge, smoothstep(0.42, 0.85, nEdge));
+  edge = max(edge, smoothstep(0.38, 0.82, nEdge));
   // ink colour of the front-most sample around the edge
   float zmin = z; float inkId = s.g;
   if (zl < zmin) { zmin = zl; inkId = sl.g; }
@@ -160,7 +163,7 @@ void main() {
       if (d < 2.0) {
         // the held weapon rides with the camera, so for it the screen is the stable frame
         hp = gl_FragCoord.xy + wob * 5.0 * sc;
-        sp = 8.5 * sc; w = 1.5 * sc;
+        sp = 8.5 * sc; w = 1.6 * sc;
       } else {
         vec4 clip = vec4(vUv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0);
         vec4 vpos = uInvProj * clip; vpos /= vpos.w;
@@ -174,7 +177,10 @@ void main() {
         // pick the world spacing whose projected width is about nine pixels, quantised to powers
         // of two so the pattern only changes density in steps and never crawls as you walk
         float lod = exp2(floor(log2(max(1e-4, (0.0165 * d) / 0.16))));
-        sp = 0.16 * lod; w = sp * 0.17;
+        sp = 0.16 * lod;
+        // near objects get denser, bolder pen strokes; distant geometry gets thinner, sparser lines
+        float strokeThick = mix(0.20, 0.12, smoothstep(6.0, 45.0, d));
+        w = sp * strokeThick;
         hp += (vnoise(hp * (2.5 / sp)) - 0.5) * sp * 0.4; // hand-drawn waver, fixed to the surface
       }
       const vec2 d1 = vec2(0.7071, 0.7071);
@@ -189,8 +195,9 @@ void main() {
       hatch = max(hatch, smoothstep(0.12, 0.0, shade) * 0.9);
     }
   }
-  float fade = mix(1.0, 0.28, smoothstep(14.0, 110.0, d));
-  float fadeE = mix(1.0, 0.45, smoothstep(30.0, 220.0, dFront));
+  // Soft, clear atmospheric attenuation for distant background sketches
+  float fade = mix(1.0, 0.22, smoothstep(12.0, 75.0, d));
+  float fadeE = mix(1.0, 0.32, smoothstep(24.0, 130.0, dFront));
 
   // paper with grain, ruled lines and a red margin
   vec2 pp = gl_FragCoord.xy;
@@ -204,9 +211,11 @@ void main() {
   paper = mix(paper, vec3(0.92, 0.48, 0.55), margin * 0.55);
 
   vec3 col = paper;
-  col = mix(col, inkColor(s.g), hatch * 0.72 * fade);
-  float ew = 0.75 + 0.35 * vnoise(pp * 0.35);
-  col = mix(col, inkColor(inkId) * 0.92, clamp(edge * ew, 0.0, 1.0) * fadeE);
+  col = mix(col, inkColor(s.g), hatch * 0.78 * fade);
+  // Edge weight: boosted for close combat and covers, soft for distant perimeter
+  float nearBoost = mix(1.32, 0.62, smoothstep(8.0, 50.0, dFront));
+  float ew = (0.78 + 0.32 * vnoise(pp * 0.35)) * nearBoost;
+  col = mix(col, inkColor(inkId) * 0.94, clamp(edge * ew, 0.0, 1.0) * fadeE);
 
   // hurt: red scribble vignette; low hp: pulsing
   vec2 vc = (vUv - 0.5) * vec2(uAspect, 1.0);

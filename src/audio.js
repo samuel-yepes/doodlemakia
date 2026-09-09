@@ -60,6 +60,9 @@ class Sfx {
   remoteShot(kind, pos) {
     if (kind === 'shotgun') { this.noise({ dur: 0.32, gain: 1.0, type: 'lowpass', freq: 1600, freqEnd: 150, pos }); this.tone({ freq: 95, freqEnd: 30, dur: 0.26, gain: 0.7, type: 'triangle', pos }); }
     else if (kind === 'sniper') { this.noise({ dur: 0.4, gain: 1.0, type: 'bandpass', freq: 750, freqEnd: 120, q: 0.5, pos }); this.tone({ freq: 420, freqEnd: 50, dur: 0.32, gain: 0.5, type: 'sawtooth', pos }); }
+    else if (kind === 'revolver') { this.noise({ dur: 0.22, gain: 0.85, type: 'bandpass', freq: 900, freqEnd: 180, q: 0.6, pos }); this.tone({ freq: 200, freqEnd: 35, dur: 0.22, gain: 0.7, type: 'sawtooth', pos }); }
+    else if (kind === 'launcher') { this.noise({ dur: 0.25, gain: 0.8, type: 'lowpass', freq: 650, pos }); this.tone({ freq: 140, freqEnd: 30, dur: 0.25, gain: 0.6, type: 'sine', pos }); }
+    else if (kind === 'smg') { this.noise({ dur: 0.08, gain: 0.6, type: 'bandpass', freq: 1500, freqEnd: 350, q: 1, pos }); this.tone({ freq: 220, freqEnd: 60, dur: 0.07, gain: 0.3, type: 'square', pos }); }
     else { this.noise({ dur: 0.16, gain: 0.85, type: 'bandpass', freq: rand(1000, 1500), freqEnd: 220, q: 0.8, pos }); this.noise({ dur: 0.05, gain: 0.4, type: 'highpass', freq: 2600, pos }); this.tone({ freq: 200, freqEnd: 50, dur: 0.12, gain: 0.45, type: 'square', pos }); }
   }
   enemyShot(pos) {
@@ -163,6 +166,25 @@ class Sfx {
   shieldHit(pos) { this.tone({ freq: rand(600, 800), freqEnd: 300, dur: 0.12, gain: 0.2, type: 'square', pos }); this.noise({ dur: 0.05, gain: 0.3, type: 'highpass', freq: 3000, pos }); }
   airdrop() { this.tone({ freq: 660, dur: 0.15, gain: 0.15, type: 'triangle' }); this.tone({ freq: 880, dur: 0.2, gain: 0.15, type: 'triangle', delay: 0.15 }); }
   crateLand(pos) { this.noise({ dur: 0.3, gain: 0.6, type: 'lowpass', freq: 500, freqEnd: 80, pos }); }
+  smgShot() {
+    this.noise({ dur: 0.08, gain: 0.55, type: 'bandpass', freq: 1600, freqEnd: 400, q: 1.2 });
+    this.noise({ dur: 0.03, gain: 0.35, type: 'highpass', freq: 3500 });
+    this.tone({ freq: 240, freqEnd: 70, dur: 0.07, gain: 0.35, type: 'triangle' });
+  }
+  launcherFire() {
+    this.noise({ dur: 0.28, gain: 0.75, type: 'lowpass', freq: 700, freqEnd: 80 });
+    this.tone({ freq: 150, freqEnd: 30, dur: 0.3, gain: 0.65, type: 'sine' });
+    this.tone({ freq: 550, freqEnd: 150, dur: 0.14, gain: 0.25, type: 'triangle' });
+  }
+  launcherBounce(pos) {
+    this.noise({ dur: 0.08, gain: 0.3, type: 'bandpass', freq: 650, q: 2, pos });
+    this.tone({ freq: 180, freqEnd: 110, dur: 0.09, gain: 0.22, type: 'sine', pos });
+  }
+  springBounce() {
+    this.tone({ freq: 220, freqEnd: 680, dur: 0.32, gain: 0.4, type: 'sine' });
+    this.tone({ freq: 440, freqEnd: 1300, dur: 0.28, gain: 0.25, type: 'triangle', delay: 0.03 });
+    this.noise({ dur: 0.12, gain: 0.25, type: 'bandpass', freq: 1200, q: 2 });
+  }
   // ---------- music: an 8-bit theme, two pulse voices, a triangle bass, an arpeggio and drums ----------
   musicOn(on) {
     if (!this.ctx) return;
@@ -174,6 +196,7 @@ class Sfx {
   setTune(key) { if (this._tuneKey === key) return; this._tuneKey = key; if (this._mus) { this._mus.step = 0; this._mus.next = this.ctx.currentTime + 0.1; } }
   _musicTick() {
     if (this._tuneKey === 'mexico') return this._mariachiTick();
+    if (this._tuneKey === 'castle') return this._castleTick();
     const ctx = this.ctx, m = this._mus; if (!m) return; const I = this._intensity || 0; const out = this.musicGain;
     const bpm = 156, step = 60 / bpm / 4; const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
     // a throttled tab can fall far behind; skip forward rather than replaying every missed note
@@ -230,6 +253,29 @@ class Sfx {
       if (sb % 2 === 0) this._noiseAt(t, sb === 0 ? 0.05 : 0.03, sb === 0 ? 0.13 : 0.07, 'highpass', 6500, out);
       if (I > 0.45 && (sb === 6 || sb === 10)) this._noiseAt(t, 0.07, 0.16, 'bandpass', 1900, out);
       if (bar === T.bars - 1 && sb >= 8) this._noiseAt(t, 0.06, 0.1 + (sb - 8) * 0.04, 'bandpass', 1600 + (sb - 8) * 300, out);
+      m.next += step; m.step++;
+    }
+  }
+  // Castle Pergamino: medieval heraldic theme in D minor / A minor, fanfare brass & lute
+  _castleTick() {
+    const ctx = this.ctx, m = this._mus; if (!m) return; const I = this._intensity || 0; const out = this.musicGain;
+    const T = CASTLE, step = 60 / T.bpm / 4; const midi = (n) => 440 * Math.pow(2, (n - 69) / 12);
+    if (m.next < ctx.currentTime - 0.8) m.next = ctx.currentTime + 0.05;
+    while (m.next < ctx.currentTime + 0.7) {
+      const t = m.next, i = m.step % T.length, bar = Math.floor(i / 16), s16 = i % 16;
+      const chord = T.chord[bar], root = chord[0]; const n = T.lead[i];
+      if (n > 0) {
+        const dur = T.len[i] * step * 0.9;
+        this.tone({ freq: midi(n), dur, gain: 0.1, type: 'sawtooth', at: t, out });
+        this.tone({ freq: midi(n + 12), dur: dur * 0.7, gain: 0.04, type: 'square', at: t, out });
+      }
+      if (s16 % 2 === 0) {
+        const ar = [root - 12, root, root + chord[1], root + 7][(s16 / 2) % 4];
+        this.tone({ freq: midi(ar), dur: step * 1.2, gain: 0.055, type: 'triangle', at: t, out });
+      }
+      if (s16 === 0 || s16 === 8) this.tone({ freq: 130, freqEnd: 40, dur: 0.14, gain: 0.38, type: 'sine', at: t, out });
+      if (s16 === 4 || s16 === 12 || (I > 0.4 && (s16 === 6 || s16 === 14))) this._noiseAt(t, 0.09, 0.16, 'bandpass', 2400, out);
+      if (bar === T.bars - 1 && s16 >= 12) this._noiseAt(t, 0.06, 0.1 + (s16 - 12) * 0.04, 'bandpass', 1500 + (s16 - 12) * 250, out);
       m.next += step; m.step++;
     }
   }
@@ -318,4 +364,25 @@ MEXICO.bars = MEXICO.chord.length; MEXICO.length = MEXICO.bars * 12;
 // the harmony trumpet sits a diatonic third under the lead (G major)
 const G_SCALE = [7, 9, 11, 0, 2, 4, 6];
 function thirdBelow(n) { const pc = ((n % 12) + 12) % 12; let k = G_SCALE.indexOf(pc); if (k < 0) return n - 4; k = (k + 5) % 7; let m = n - 1; while (((m % 12) + 12) % 12 !== G_SCALE[k]) m--; return m; }
+
+// ---------- Castle Pergamino: medieval heraldic modal fanfare ----------
+const Dm = [62, 3], Cmaj = [60, 4], Bb = [58, 4], A7 = [57, 4], Fmaj = [65, 4], Gm7 = [67, 3];
+const CASTLE_BARS = [
+  N(62, 3, 65, 1, 69, 4, 74, 4, 72, 2, 69, 2),
+  N(67, 3, 72, 1, 74, 4, 72, 4, 69, 2, 67, 2),
+  N(65, 3, 69, 1, 70, 4, 69, 4, 65, 2, 62, 2),
+  N(64, 4, 67, 4, 69, 6, 0, 2),
+  N(74, 2, 72, 2, 70, 2, 69, 2, 70, 4, 72, 4),
+  N(74, 4, 76, 2, 77, 6, 0, 4),
+  N(76, 2, 74, 2, 72, 4, 70, 4, 69, 4),
+  N(69, 6, 70, 2, 69, 8),
+];
+const CASTLE = {
+  lead: CASTLE_BARS.flatMap((b) => b.notes),
+  len: CASTLE_BARS.flatMap((b) => b.lens),
+  bpm: 132,
+  chord: [Dm, Cmaj, Bb, A7, Dm, Fmaj, Gm7, A7],
+};
+CASTLE.bars = CASTLE.chord.length; CASTLE.length = CASTLE.bars * 16;
+
 export const audio = new Sfx();

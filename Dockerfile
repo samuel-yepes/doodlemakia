@@ -1,10 +1,10 @@
-# 涂鸦街区 (Doodle District) - 静态站点 Dockerfile
+# Distrito Garabato (Doodle District) - Dockerfile de sitio estático
 FROM nginx:1.27-alpine
 
-# 站点文件复制到 nginx 默认站点目录
+# Copiar archivos del sitio al directorio predeterminado de nginx
 COPY . /usr/share/nginx/html
 
-# 静态资源缓存策略：vendor 下的是不可变库文件，长缓存；其余短缓存
+# Estrategia de caché de recursos estáticos: los archivos en vendor son inmutables, caché larga; el resto caché corta
 RUN printf 'server {\n\
     listen 80;\n\
     server_name _;\n\

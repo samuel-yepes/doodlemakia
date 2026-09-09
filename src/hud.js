@@ -4,32 +4,34 @@ export class HUD {
     this.root = root;
     root.innerHTML = `
       <div class="scope" id="scope"><div class="mask"></div><div class="ring"></div><div class="cx"></div><div class="cy"></div><div class="dot"></div></div>
-      <div class="focus-meter" id="focusmeter"><div class="fm-label">太刀</div><div class="fm-tube"><div class="fm-fill" id="fmfill"></div><i class="fm-f1"></i><i class="fm-f2"></i><i class="fm-f3"></i></div><div class="fm-ready" id="fmready">拔刀就绪</div></div>
+      <div class="focus-meter" id="focusmeter"><div class="fm-label">Katana</div><div class="fm-tube"><div class="fm-fill" id="fmfill"></div><i class="fm-f1"></i><i class="fm-f2"></i><i class="fm-f3"></i></div><div class="fm-ready" id="fmready">Corte listo</div></div>
       <div class="focus-mark" id="focusmark"><i></i><i></i><i></i><i></i></div>
       <div class="crosshair" id="crosshair"><i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i><i class="ch-dot"></i></div>
       <div class="grapple-ret" id="gret"></div><div class="gstam" id="gstam" hidden><i id="gstamfill"></i></div>
       <div class="hitmarker" id="hitmarker"><i></i><i></i></div>
       <div class="dmg-ind" id="dmg"></div>
-      <div class="hud-tl"><div class="score">分数 <b id="score">0</b></div><div class="combo" id="combo"></div></div>
-      <div class="hud-tr"><div class="wave">波次 <b id="wave">1</b></div><div class="modifier" id="modifier"></div><div class="left"><b id="left">0</b> 个敌人待消灭</div><div class="timer" id="timer"></div><div class="pvpscore" id="pvpscore" hidden></div></div><div class="board" id="board" hidden></div>
+      <div class="hud-tl"><div class="score">Puntos <b id="score">0</b></div><div class="combo" id="combo"></div></div>
+      <div class="hud-tr"><div class="wave">Oleada <b id="wave">1</b></div><div class="modifier" id="modifier"></div><div class="left"><b id="left">0</b> enemigos restantes</div><div class="timer" id="timer"></div><div class="pvpscore" id="pvpscore" hidden></div></div><div class="board" id="board" hidden></div>
+      <div class="tdm-header" id="tdmHeader" hidden><span class="team-blue">Equipo Azul: <b id="blueKills">0</b></span> <span class="divider">|</span> <span class="team-red">Equipo Rojo: <b id="redKills">0</b></span><div class="tdm-target" id="tdmTarget">Primero a 30 bajas</div></div>
+      <div class="net-status" id="netStatus" hidden><span id="netStatusText"></span></div>
       <div class="bossbar" id="bossbar"><div class="bossname" id="bossname"></div><div class="bar big"><div class="fill red" id="bossfill"></div></div></div>
       <div class="hud-bl">
-        <div class="health"><span>生命</span><div class="bar"><div class="fill" id="hpfill"></div></div><span id="hpnum">100</span></div>
-        <div class="ammo"><b id="mag">30</b><span id="reserve">/120</span><span class="reloading" id="reloading"></span><span class="nades" id="nades" title="手雷"></span></div>
+        <div class="health"><span>Salud</span><div class="bar"><div class="fill" id="hpfill"></div></div><span id="hpnum">100</span></div>
+        <div class="ammo"><b id="mag">30</b><span id="reserve">/120</span><span class="reloading" id="reloading"></span><span class="nades" id="nades" title="Granadas"></span></div>
         <div class="tally" id="tally"></div>
       </div>
-      <div class="hud-br"><div class="slots" id="slots"></div><div class="weapon" id="weapon">步枪</div><div class="hint" id="hint"></div></div>
+      <div class="hud-br"><div class="slots" id="slots"></div><div class="weapon" id="weapon">Fusil</div><div class="hint" id="hint"></div></div>
       <div class="tip" id="tip"></div>
       <div class="message"><div class="msg-main" id="msg"></div><div class="msg-sub" id="msgsub"></div></div>
       <div class="killfeed" id="killfeed"></div>
       <div class="screen" id="screen"><div class="panel" id="panel"></div></div>`;
     const q = (id) => root.querySelector('#' + id);
-    this.el = { crosshair: q('crosshair'), gret: q('gret'), hitmarker: q('hitmarker'), dmg: q('dmg'), score: q('score'), combo: q('combo'), wave: q('wave'), modifier: q('modifier'), left: q('left'), timer: q('timer'), hpfill: q('hpfill'), hpnum: q('hpnum'), mag: q('mag'), reserve: q('reserve'), reloading: q('reloading'), tally: q('tally'), weapon: q('weapon'), hint: q('hint'), slots: q('slots'), tip: q('tip'), msg: q('msg'), msgsub: q('msgsub'), killfeed: q('killfeed'), screen: q('screen'), panel: q('panel'), nades: q('nades'), scope: q('scope'), focusmark: q('focusmark'), focusmeter: q('focusmeter'), fmfill: q('fmfill'), bossbar: q('bossbar'), bossname: q('bossname'), bossfill: q('bossfill'), pvpscore: q('pvpscore'), board: q('board'), gstam: q('gstam'), gstamfill: q('gstamfill') };
+    this.el = { crosshair: q('crosshair'), gret: q('gret'), hitmarker: q('hitmarker'), dmg: q('dmg'), score: q('score'), combo: q('combo'), wave: q('wave'), modifier: q('modifier'), left: q('left'), timer: q('timer'), hpfill: q('hpfill'), hpnum: q('hpnum'), mag: q('mag'), reserve: q('reserve'), reloading: q('reloading'), tally: q('tally'), weapon: q('weapon'), hint: q('hint'), slots: q('slots'), tip: q('tip'), msg: q('msg'), msgsub: q('msgsub'), killfeed: q('killfeed'), screen: q('screen'), panel: q('panel'), nades: q('nades'), scope: q('scope'), focusmark: q('focusmark'), focusmeter: q('focusmeter'), fmfill: q('fmfill'), bossbar: q('bossbar'), bossname: q('bossname'), bossfill: q('bossfill'), pvpscore: q('pvpscore'), board: q('board'), gstam: q('gstam'), gstamfill: q('gstamfill'), tdmHeader: q('tdmHeader'), blueKills: q('blueKills'), redKills: q('redKills'), tdmTarget: q('tdmTarget'), netStatus: q('netStatus'), netStatusText: q('netStatusText') };
     this._msgT = 0; this._scope = false; this._nades = -1; this._pad = false; this.onDevice = null; this._fmShow = false; this._fmFrac = -1; this._fmReady = false; this._lastTally = -1; this._lastSlots = ''; this._ads = false; this._mode = ''; this.onScreenClick = null; this._tipT = 0;
     this.el.screen.addEventListener('click', () => { if (this.onScreenClick) this.onScreenClick(); });
   }
   // katana charge gauge: fills with katana kills, catches fire when a focus slash is ready
-  setFocusMeter(show, frac, ready, label = '太刀') {
+  setFocusMeter(show, frac, ready, label = 'Katana') {
     const m = this.el.focusmeter;
     if (show !== this._fmShow) { this._fmShow = show; m.classList.toggle('on', show); }
     if (!show) return;
@@ -56,7 +58,7 @@ export class HUD {
   grappleTarget(state) { this.el.gret.className = 'grapple-ret' + (state === 1 ? ' on' : state === 2 ? ' on attached' : ''); }
   hitmarker(kill = false, crit = false) { const h = this.el.hitmarker; h.className = 'hitmarker' + (kill ? ' kill' : '') + (crit ? ' crit' : ''); void h.offsetWidth; h.classList.add('show'); }
   setAmmo(mag, reserve, magSize, reloading = false) {
-    this.el.mag.textContent = mag; this.el.reserve.textContent = '/' + reserve; this.el.reloading.textContent = reloading ? ' 换弹中…' : '';
+    this.el.mag.textContent = mag; this.el.reserve.textContent = '/' + reserve; this.el.reloading.textContent = reloading ? ' Recargando…' : '';
     if (mag !== this._lastTally) { this._lastTally = mag; let s = ''; for (let i = 0; i < Math.min(mag, 40); i++) s += '<i></i>'; this.el.tally.innerHTML = s; }
   }
   setKatana() { this.el.mag.textContent = '∞'; this.el.reserve.textContent = ''; this.el.reloading.textContent = ''; if (this._lastTally !== -1) { this.el.tally.innerHTML = ''; this._lastTally = -1; } }
@@ -65,12 +67,27 @@ export class HUD {
     this.el.slots.innerHTML = slots.map((s, i) => `<div class="slot${s.active ? ' active' : ''}${s.empty ? ' empty' : ''}"><span class="num">${i + 1}</span>${s.name}<span class="sammo">${s.ammo}</span></div>`).join('');
   }
   setHealth(hp, max) { const f = Math.max(0, hp / max); this.el.hpfill.style.width = (f * 100).toFixed(1) + '%'; this.el.hpnum.textContent = Math.ceil(hp); this.root.classList.toggle('low', f < 0.3); }
-  setBoard(html) { const on = !!html; this.el.board.hidden = !on; if (on) this.el.board.innerHTML = html; }
   setPvpScore(html) { const on = !!html; this.el.pvpscore.hidden = !on; if (on) this.el.pvpscore.innerHTML = html; this.el.wave.parentElement.hidden = on; this.el.left.parentElement.hidden = on; }
+  setBoard(html) { const on = !!html; this.el.board.hidden = !on; if (on) this.el.board.innerHTML = html; }
+  setTdmScore(show, blueKills = 0, redKills = 0, target = 30) {
+    this.el.tdmHeader.hidden = !show;
+    if (show) {
+      this.el.blueKills.textContent = blueKills;
+      this.el.redKills.textContent = redKills;
+      this.el.tdmTarget.textContent = `Primero a ${target} bajas`;
+      this.el.wave.parentElement.hidden = true;
+      this.el.left.parentElement.hidden = true;
+    }
+  }
+  setNetState(status) {
+    const show = !!status;
+    this.el.netStatus.hidden = !show;
+    if (show) this.el.netStatusText.textContent = status;
+  }
   setWave(n, left) { this.el.wave.textContent = n; this.el.left.textContent = left; }
   setModifier(text) { this.el.modifier.textContent = text || ''; }
   setTimer(text) { this.el.timer.textContent = text || ''; }
-  setScore(score, combo) { this.el.score.textContent = score; this.el.combo.textContent = combo > 1 ? '连击 x' + combo : ''; }
+  setScore(score, combo) { this.el.score.textContent = score; this.el.combo.textContent = combo > 1 ? 'Combo x' + combo : ''; }
   setWeapon(name, hint) { this.el.weapon.textContent = name; this.el.hint.textContent = hint || ''; }
   setBoss(name, frac) { if (frac == null) { this.el.bossbar.classList.remove('show'); return; } this.el.bossbar.classList.add('show'); this.el.bossname.textContent = name; this.el.bossfill.style.width = (Math.max(0, frac) * 100).toFixed(1) + '%'; }
   tip(text, dur = 5) { this.el.tip.innerHTML = text; this.el.tip.classList.add('show'); this._tipT = dur; }
@@ -89,32 +106,32 @@ export class HUD {
   }
 }
 
-export const KB_KEYS = { fire: 'LMB', aim: 'RMB', block: 'RMB', jump: 'Space', sprint: 'Shift', slide: 'C', dash: 'C', grapple: 'Q', melee: 'F', reload: 'R', grenade: 'G', focus: '左右键同按（或 X）', next: '滚轮', pause: 'Esc', confirm: 'Space', score: 'Tab' };
+export const KB_KEYS = { fire: 'Clic Izq', aim: 'Clic Der', block: 'Clic Der', jump: 'Espacio', sprint: 'Shift', slide: 'C', dash: 'C', grapple: 'Q', melee: 'F', reload: 'R', grenade: 'G', focus: 'Ambos clics (o X)', next: 'Rueda', pause: 'Esc', confirm: 'Espacio', score: 'Tab' };
 export const PAD_KEYS = { fire: 'R2', aim: 'L2', block: 'L2', jump: '✕', sprint: 'L3', slide: '○', dash: '○', grapple: 'L1', melee: 'R1', reload: '□', grenade: 'R3', focus: 'L2 + R2', next: '△', pause: 'Options', confirm: '✕', score: 'Create' };
 export const CONTROLS_HTML = `
 <div class="cols">
-  <div><div class="colhead">鼠标 + 键盘</div>
-    <div><b>WASD</b> 移动 &nbsp; <b>鼠标</b> 视角 &nbsp; <b>Shift</b> 疾跑</div>
-    <div><b>LMB</b> 开火 / 挥砍 &nbsp; <b>RMB</b> 开镜瞄准 / 格挡</div>
-    <div><b>Space</b> 跳跃（在墙上再按 = 蹬墙跳）</div>
-    <div>空中再按 <b>Space</b> = 二段跳</div>
-    <div><b>C / Ctrl</b> 地面滑铲 · 空中冲刺</div>
-    <div><b>Q / E</b> 抓钩：点按摆荡，长按收绳，跳跃起飞</div>
-    <div><b>F</b> 太刀快速挥砍 &nbsp; <b>R</b> 换弹 &nbsp; <b>M</b> 音乐</div>
-    <div><b>G</b> 手雷 · 按住可扔得更远</div>
-    <div><b>Tab</b> 计分板（联机） &nbsp; <b>Esc</b> 暂停</div>
-    <div><b>左右键同按</b> 能量满后施展冲刺斩</div>
-    <div><b>1-4 / 滚轮</b> 步枪 · 霰弹枪 · 狙击枪 · 太刀</div>
+  <div><div class="colhead">Ratón + Teclado</div>
+    <div><b>WASD</b> Moverse &nbsp; <b>Ratón</b> Mirar &nbsp; <b>Shift</b> Esprintar</div>
+    <div><b>Clic Izq</b> Disparar / Tajo &nbsp; <b>Clic Der</b> Apuntar / Bloquear</div>
+    <div><b>Espacio</b> Saltar (en pared = salto de pared)</div>
+    <div>En el aire pulsa <b>Espacio</b> = Doble salto</div>
+    <div><b>C / Ctrl</b> Deslizarse en suelo · Embestida aérea</div>
+    <div><b>Q / E</b> Gancho: toque para balanceo, mantener para recoger, saltar para impulso</div>
+    <div><b>F</b> Tajo rápido de katana &nbsp; <b>R</b> Recargar &nbsp; <b>M</b> Música</div>
+    <div><b>G</b> Granada · Mantén para lanzar más lejos</div>
+    <div><b>Tab</b> Marcador (en línea) &nbsp; <b>Esc</b> Pausa</div>
+    <div><b>1-7 / Rueda</b> Fusil · Escopeta · Sniper · Subfusil · Revólver · Lanzatintas · Katana</div>
+    <div><b>Trampolines / Resortes</b> Salta sobre ellos para impulsarte a gran altura</div>
   </div>
-  <div><div class="colhead">PS5 手柄</div>
-    <div><b>左摇杆</b> 移动 &nbsp; <b>右摇杆</b> 视角 &nbsp; <b>L3</b> 疾跑</div>
-    <div><b>R2</b> 开火 / 挥砍 &nbsp; <b>L2</b> 瞄准 / 格挡</div>
-    <div><b>✕</b> 跳跃 &nbsp; <b>○</b> 滑铲 · 空中冲刺</div>
-    <div><b>L1</b> 抓钩（长按收绳，✕ 起飞）</div>
-    <div><b>L2 + R2</b> 太刀能量满后施展冲刺斩</div>
-    <div><b>R1</b> 太刀快速挥砍，随后自动切回枪械</div>
-    <div><b>□</b> 换弹 &nbsp; <b>△</b> 下一把武器</div>
-    <div><b>R3 / 十字键上</b> 手雷 · 按住可扔得更远</div>
-    <div><b>Create</b> 计分板（联机） &nbsp; <b>Options</b> 暂停</div>
+  <div><div class="colhead">Mando PS5</div>
+    <div><b>Stick Izq</b> Moverse &nbsp; <b>Stick Der</b> Mirar &nbsp; <b>L3</b> Esprintar</div>
+    <div><b>R2</b> Disparar / Tajo &nbsp; <b>L2</b> Apuntar / Bloquear</div>
+    <div><b>✕</b> Saltar &nbsp; <b>○</b> Deslizarse · Embestida aérea</div>
+    <div><b>L1</b> Gancho (mantener para recoger, ✕ para impulso)</div>
+    <div><b>L2 + R2</b> Embestida con corte con energía al máximo</div>
+    <div><b>R1</b> Tajo rápido de katana y vuelve al arma</div>
+    <div><b>□</b> Recargar &nbsp; <b>△</b> Siguiente arma</div>
+    <div><b>R3 / D-pad Arriba</b> Granada · Mantén para lanzar más lejos</div>
+    <div><b>Create</b> Marcador (en línea) &nbsp; <b>Options</b> Pausa</div>
   </div>
 </div>`;

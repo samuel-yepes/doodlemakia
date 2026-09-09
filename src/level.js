@@ -7,16 +7,30 @@ import { rand, choose, TAU } from './util.js';
 import { buildHumanoid } from './enemies.js';
 
 // Doodle Mexico is built and kept, but off the menu until it is ready; flip this to offer it again
-export const MEXICO_READY = false;
-export const LEVELS = [{ key: 'district', name: '涂鸦街区', blurb: '街道、屋顶与消防梯' }, ...(MEXICO_READY ? [{ key: 'mexico', name: '涂鸦墨西哥', blurb: '阳光烘烤的广场 · 皮纳塔、塔可和马里亚奇乐队' }] : [])];
+export const MEXICO_READY = true;
+export const LEVELS = [
+  { key: 'district', name: 'Distrito Garabato', blurb: 'Calles, tejados, trampolines y pasarelas urbanas' },
+  { key: 'mexico', name: 'Garabato México', blurb: 'Plaza soleada · Piñatas, tacos y mariachis' },
+  { key: 'canyon', name: 'Cañón de Papel', blurb: 'Río de tinta, árboles gigantes, acantilados y puente colgante' },
+];
 
 function createBuilder(scene, world) {
-  const geos = {}; const L = { rings: [], spawns: [], snipers: [], pickups: [], animated: [], meshes: [], playerStart: new THREE.Vector3(0, 0, 42), bounds: { minX: -55, maxX: 55, minZ: -55, maxZ: 55 }, arenaSpawns: [], grappleMovers: [], breakables: [], key: 'district' };
+  const geos = {}; const L = { rings: [], spawns: [], snipers: [], pickups: [], animated: [], meshes: [], playerStart: new THREE.Vector3(0, 0, 42), bounds: { minX: -55, maxX: 55, minZ: -55, maxZ: 55 }, arenaSpawns: [], grappleMovers: [], breakables: [], jumpPads: [], key: 'district' };
   const addGeo = (g, ink) => (geos[ink] || (geos[ink] = [])).push(g);
   const collider = (x, y, z, w, h, d, o = {}) => world.addBox({ x: x - w / 2, y, z: z - d / 2 }, { x: x + w / 2, y: y + h, z: z + d / 2 }, { noNav: !!o.noNav, noShoot: !!o.noShoot, noGrapple: !!o.noGrapple, tag: o.tag });
   function box(x, y, z, w, h, d, o = {}) {
     const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y + h / 2, z); addGeo(g, o.ink ?? INK.BLUE);
     if (!o.noCollide) collider(x, y, z, w, h, d, o);
+  }
+  function jumpPad(x, y, z, power = 22, radius = 1.6) {
+    cyl(x, y, z, 1.5, 0.22, { ink: INK.BLACK, seg: 14 });
+    for (let i = 0; i < 4; i++) {
+      cyl(x, y + 0.22 + i * 0.12, z, 0.55 - (i % 2) * 0.1, 0.09, { ink: INK.BLUE, seg: 8, noCollide: true });
+    }
+    cyl(x, y + 0.65, z, 1.25, 0.14, { ink: INK.ORANGE, seg: 14 });
+    box(x, y + 0.73, z, 0.35, 0.03, 0.35, { ink: INK.RED, noCollide: true });
+    collider(x, y, z, 2.6, 0.7, 2.6, { noNav: false });
+    L.jumpPads.push({ pos: new THREE.Vector3(x, y + 0.7, z), radius, power });
   }
   const slab = (x1, z1, x2, z2, y, t, o = {}) => box((x1 + x2) / 2, y - t, (z1 + z2) / 2, x2 - x1, t, z2 - z1, o); // top surface at y
   // Wall pieces along an axis with rectangular gaps [a1, a2, yBottom = 0, yTop = h]; gaps may overlap.
@@ -96,12 +110,12 @@ function createBuilder(scene, world) {
       L.animated.push({ mesh: m, update: (t) => { const a = t * sp + ph; m.position.set(Math.cos(a) * r, h + Math.sin(a * 2.3) * 3, Math.sin(a) * r * 0.7); m.lookAt(Math.cos(a + 0.05) * r, h + Math.sin((a + 0.05) * 2.3) * 3, Math.sin(a + 0.05) * r * 0.7); m.rotateZ(Math.sin(a * 3) * 0.6); } });
     }
   }
-  return { L, addGeo, collider, box, slab, wallX, wallZ, stairs, rail, cyl, sphere, ring, spawn, sniper, pickup, finish, planes, scene, world };
+  return { L, addGeo, collider, box, slab, wallX, wallZ, stairs, rail, cyl, sphere, ring, spawn, sniper, pickup, finish, planes, scene, world, jumpPad };
 }
 
 // ============================ map 1: Doodle District ============================
 function buildDistrict(B, arena = false) {
-  const { L, box, slab, wallX, wallZ, stairs, rail, cyl, sphere, ring, spawn, sniper, pickup, planes, addGeo, collider } = B;
+  const { L, box, slab, wallX, wallZ, stairs, rail, cyl, sphere, ring, spawn, sniper, pickup, planes, addGeo, collider, jumpPad } = B;
   // ---------------- ground + perimeter ----------------
   // solo keeps the tight old block; a match gets a far wider arena, a dome and a hanging playground
   const P = arena ? 68 : 55, T = 6, PH = arena ? 30 : 18, E = P - 3.8, D = P - 3;
@@ -128,10 +142,54 @@ function buildDistrict(B, arena = false) {
   for (const [x, z] of [[-D, 0], [D, 0], [-D, 30], [D, -30], [-D, -30], [D, 30]]) { doorFrame(x, z, false); spawn(x + (x < 0 ? 1.2 : -1.2), 0, z); }
   for (const [x, z] of [[0, -D], [0, D], [-30, D], [30, D]]) { doorFrame(x, z, true); spawn(x, 0, z + (z < 0 ? 1.2 : -1.2)); }
   if (arena) {
-    // where a match drops people in: rooftops, the highway, the field edges and the outer ring
-    for (const [x, y, z] of [[-34, 12.2, 12], [34, 12.2, 12], [-30, 7.2, -45], [16, 7.2, -45], [0, 7.4, -30], [-44, 0, -10], [44, 0, -10], [-40, 0, 40], [40, 0, 40], [0, 0, 55], [-58, 0, 0], [58, 0, 0], [0, 0, -58], [-54, 0, 54], [54, 0, -54]]) L.arenaSpawns.push(new THREE.Vector3(x, y, z));
-    // a few low things on the field, nothing to hide a whole person
-    box(-8, 0, 20, 3, 1, 1.2); box(10, 0, 26, 1.4, 1.2, 1.4); box(-12, 0, -8, 2.4, 0.8, 2.4); box(14, 0, -4, 2.4, 0.8, 2.4);
+    // where a match drops people in: rooftops, the highway, elevated overpass, and lane bases
+    for (const [x, y, z] of [
+      [-34, 12.2, 12], [34, 12.2, 18], [0, 12.2, 6], [-30, 7.2, -45], [16, 7.2, -45], [0, 7.4, -30],
+      [-42, 0, 18], [42, 0, 18], [-46, 0, -6], [46, 0, -6], [-40, 0, 36], [40, 0, 36],
+      [0, 0, 48], [-54, 0, 0], [54, 0, 0], [0, 0, -52]
+    ]) L.arenaSpawns.push(new THREE.Vector3(x, y, z));
+
+    // ---------------- central courtyard & tactical covers (mid lane) ----------------
+    // central monument & fountain (mid anchor)
+    cyl(0, 0, 6, 4.6, 0.85, { ink: INK.BLUE });
+    cyl(0, 0.85, 6, 1.3, 2.6, { ink: INK.ORANGE });
+    sphere(0, 3.9, 6, 0.65, { ink: INK.BLUE });
+    ring(0, 5.2, 6, 'y');
+    pickup(0, 0.9, 6);
+
+    // 4 tactical modular barricades around mid with pen-hatch styling
+    const barricade = (x, z, w, d, ink = INK.BLUE) => {
+      box(x, 0, z, w, 1.3, d, { ink });
+      const steps = Math.floor(Math.max(w, d) / 0.5);
+      const isW = w >= d;
+      for (let i = 0; i <= steps; i++) {
+        const t = (i - steps / 2) * 0.48;
+        if (isW) box(x + t, 0.65, z + d / 2 + 0.02, 0.05, 1.1, 0.02, { noCollide: true, ink: INK.BLACK });
+        else box(x + w / 2 + 0.02, 0.65, z + t, 0.02, 1.1, 0.05, { noCollide: true, ink: INK.BLACK });
+      }
+    };
+    barricade(-8, -2, 4.2, 0.8, INK.BLUE);
+    barricade(8, -2, 4.2, 0.8, INK.BLUE);
+    barricade(-8, 14, 4.2, 0.8, INK.BLUE);
+    barricade(8, 14, 4.2, 0.8, INK.BLUE);
+
+    // modular box cover flanking mid chokepoints
+    box(-16, 0, 6, 2.4, 1.3, 2.4, { ink: INK.ORANGE });
+    box(16, 0, 6, 2.4, 1.3, 2.4, { ink: INK.GREEN });
+    box(-14, 0, -8, 2.2, 1.5, 2.2, { ink: INK.BLUE });
+    box(14, 0, -8, 2.2, 1.5, 2.2, { ink: INK.BLUE });
+    box(-14, 0, 20, 2.2, 1.2, 2.2, { ink: INK.GREEN });
+    box(14, 0, 20, 2.2, 1.2, 2.2, { ink: INK.ORANGE });
+
+    // left lane (west) & right lane (east) modular crate covers
+    box(-46, 0, -6, 2.4, 1.4, 1.8, { ink: INK.BLUE });
+    box(-46, 0, 16, 2.2, 1.2, 2.2, { ink: INK.ORANGE });
+    box(-34, 0, -10, 3.2, 1.3, 0.8, { ink: INK.GREEN });
+
+    box(46, 0, -6, 2.4, 1.4, 1.8, { ink: INK.BLUE });
+    box(46, 0, 16, 2.2, 1.2, 2.2, { ink: INK.GREEN });
+    box(34, 0, -10, 3.2, 1.3, 0.8, { ink: INK.ORANGE });
+
     for (const [x, z] of [[-56, 30], [56, -30], [30, -56], [-30, 56]]) { box(x, 0, z, 0.3, 7, 0.3, { noNav: true }); box(x, 7, z, 1.4, 0.3, 0.3, { noCollide: true }); addGeo(new THREE.SphereGeometry(0.45, 8, 6).translate(x + 0.7, 6.8, z), INK.ORANGE); }
     // the dome: ribs to look at, plus an invisible shell of bands that stops you and shrugs off the hook
     const R = 120, C = -30; const domeY = (x, z) => Math.sqrt(Math.max(1, R * R - x * x - z * z)) + C;
@@ -149,7 +207,64 @@ function buildDistrict(B, arena = false) {
     planes(4, 30, 26, { scale: 1.7, rStep: 9, hStep: 6, speed: 0.11, ink: INK.BLUE });
   }
 
-  // ---------------- central tower (solo only: a match wants the field open) ----------------
+  // ---------------- floor guide lines (hand-drawn sketch markings) ----------------
+  const floorLine = (x, z, w, d, ink = INK.BLACK) => {
+    const g = new THREE.BoxGeometry(w, 0.015, d);
+    g.translate(x, 0.01, z);
+    addGeo(g, ink);
+  };
+  const floorDashes = (x1, z1, x2, z2, step = 2.4, len = 1.2, width = 0.16, ink = INK.BLACK) => {
+    const dx = x2 - x1, dz = z2 - z1;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.1) return;
+    const ux = dx / dist, uz = dz / dist;
+    const count = Math.floor(dist / step);
+    for (let i = 0; i <= count; i++) {
+      const cx = x1 + ux * i * step, cz = z1 + uz * i * step;
+      floorLine(cx, cz, Math.abs(ux) > 0.7 ? len : width, Math.abs(uz) > 0.7 ? len : width, ink);
+    }
+  };
+  const floorRing = (cx, cz, radius, segments = 16, ink = INK.BLACK) => {
+    for (let i = 0; i < segments; i++) {
+      const a1 = (i / segments) * Math.PI * 2;
+      const a2 = ((i + 0.6) / segments) * Math.PI * 2;
+      const x = cx + Math.cos((a1 + a2) / 2) * radius;
+      const z = cz + Math.sin((a1 + a2) / 2) * radius;
+      floorLine(x, z, 0.35, 0.35, ink);
+    }
+  };
+
+  // Spawn zones: Blue base (West / SW) & Red base (East / SE)
+  floorRing(-40, 16, 4.5, 18, INK.BLUE);
+  floorDashes(-46, 10, -34, 10, 2.2, 1.0, 0.18, INK.BLUE);
+  floorDashes(-46, 22, -34, 22, 2.2, 1.0, 0.18, INK.BLUE);
+  floorDashes(-46, 10, -46, 22, 2.2, 0.18, 1.0, INK.BLUE);
+  floorDashes(-34, 10, -34, 22, 2.2, 0.18, 1.0, INK.BLUE);
+
+  floorRing(40, 16, 4.5, 18, INK.RED);
+  floorDashes(34, 10, 46, 10, 2.2, 1.0, 0.18, INK.RED);
+  floorDashes(34, 22, 46, 22, 2.2, 1.0, 0.18, INK.RED);
+  floorDashes(34, 10, 34, 22, 2.2, 0.18, 1.0, INK.RED);
+  floorDashes(46, 10, 46, 22, 2.2, 0.18, 1.0, INK.RED);
+
+  // Central courtyard ring and lane demarcation dashes
+  floorRing(0, 6, 6.2, 24, INK.BLACK);
+  floorDashes(0, -18, 0, 26, 3.2, 0.18, 1.6, INK.BLACK);
+  floorDashes(-24, -20, -24, 28, 3.8, 0.16, 1.8, INK.BLUE);
+  floorDashes(24, -20, 24, 28, 3.8, 0.16, 1.8, INK.RED);
+
+  // Direction chevron arrows toward mid courtyard
+  const drawChevron = (x, z, dirX, dirZ, ink) => {
+    floorLine(x, z, 0.2, 1.6, ink);
+    floorLine(x + dirX * 0.5, z - dirZ * 0.4, 0.7, 0.18, ink);
+    floorLine(x + dirX * 0.5, z + dirZ * 0.4, 0.7, 0.18, ink);
+  };
+  drawChevron(-28, 6, 1, 0, INK.BLUE);
+  drawChevron(-20, 6, 1, 0, INK.BLUE);
+  drawChevron(28, 6, -1, 0, INK.RED);
+  drawChevron(20, 6, -1, 0, INK.RED);
+
+  // ---------------- central tower (solo only: a match has the open 3-lane courtyard) ----------------
   if (!arena) {
     const W = 14, H = 4, hw = W / 2;
     for (let f = 1; f <= 4; f++) slab(-hw, -hw, hw, hw, f * H, 0.4);
@@ -206,7 +321,19 @@ function buildDistrict(B, arena = false) {
     { const bx2 = arena ? 24.2 : -7; const len = bx2 + 25.2;
       box((bx2 - 25.2) / 2, 11.6, 6, len, 0.4, 2.4, { ink: INK.ORANGE });
       for (let i = 0; i <= Math.floor(len); i++) box(-25 + i, 12, 5, 0.06, 0.02, i % 5 === 0 ? 0.6 : 0.35, { noCollide: true, ink: INK.BLACK });
-      rail(-25, 7.2, bx2, 7.2, 12, { ink: INK.ORANGE }); if (arena) rail(-25, 4.8, bx2, 4.8, 12, { ink: INK.ORANGE }); }
+      rail(-25, 7.2, bx2, 7.2, 12, { ink: INK.ORANGE });
+      if (arena) {
+        rail(-25, 4.8, bx2, 4.8, 12, { ink: INK.ORANGE });
+        // Central sniper nest in the middle of the ruler bridge, overlooking mid
+        slab(-3.5, 4.0, 3.5, 8.0, 12, 0.4, { ink: INK.ORANGE });
+        rail(-3.5, 8.0, 3.5, 8.0, 12, { ink: INK.ORANGE });
+        rail(-3.5, 4.0, -3.5, 8.0, 12, { ink: INK.ORANGE });
+        rail(3.5, 4.0, 3.5, 8.0, 12, { ink: INK.ORANGE });
+        ring(0, 15.2, 6, 'y');
+        sniper(0, 12, 6);
+        pickup(0, 12, 6);
+      }
+    }
     
     spawn(-34, 12, 12); spawn(-40, 0, 18); sniper(-27, 12, 6); pickup(-34, 4, 12); pickup(-30, 12, 16); pickup(-40, 8, 8);
   }
@@ -294,6 +421,40 @@ function buildDistrict(B, arena = false) {
     for (const [x, z] of [[-10, 46], [10, 46], [-22, 24], [22, 24]]) { box(x, 0, z, 0.25, 6, 0.25); box(x, 6, z, 1.4, 0.3, 0.5, { noCollide: true }); }
     for (const [x, z] of [[-4, 46], [4, 46]]) { box(x, 0.4, z, 3, 0.15, 0.6); box(x, 0, z, 2.6, 0.4, 0.2, { noCollide: true }); }
     pickup(-6, 0, 36); pickup(6, 0, 36); pickup(-30, 1.6, 44); pickup(38, 3, 40); pickup(0, 0, 10);
+    // jump pads across the district
+    jumpPad(-21, 0, 14, 23);
+    jumpPad(21, 0, 14, 23);
+    jumpPad(0, 0, 28, 22);
+
+    // ---------------- enterable houses in south plaza: House C (SW) & House D (SE) ----------------
+    // House C (SW): 2 floors, doors, windows, interior staircase, rooftop balcony and bridge to Building A
+    {
+      const x1 = -46, x2 = -32, z1 = 28, z2 = 42;
+      slab(x1, z1, x2, z2, 4, 0.4); slab(x1, z1, x2, z2, 8, 0.4);
+      wallZ(z1, z2, x2, 0, 8, 0.35, [[32, 36, 0, 3.2], [32, 36, 4.5, 7]]); // east face with door & window
+      wallZ(z1, z2, x1, 0, 8, 0.35, [[34, 38, 4.5, 7]]); // west face
+      wallX(x1, x2, z1, 0, 8, 0.35, [[-41, -37, 0, 3.2], [-41, -37, 4.5, 7]]); // north face
+      wallX(x1, x2, z2, 0, 8, 0.35, [[-42, -36, 4.5, 7]]); // south face
+      stairs(-36, 0, 30, '+z', 14, 1.8);
+      rail(x1, z1, x2, z1, 8); rail(x1, z2, x2, z2, 8); rail(x1, z1, x1, z2, 8); rail(x2, z1, x2, z2, 8);
+      // walkway bridge connecting House C roof to Building A fire escape
+      box(-35, 7.6, 25, 2.2, 0.4, 6, { ink: INK.ORANGE });
+      rail(-36.1, 22, -36.1, 28, 8); rail(-33.9, 22, -33.9, 28, 8);
+      pickup(-38, 8, 36); sniper(-34, 8, 30);
+    }
+    // House D (SE): 2 floors, tactical interior cover, rooftop sniper perch & launch pad to Building B
+    {
+      const x1 = 30, x2 = 44, z1 = 26, z2 = 40;
+      slab(x1, z1, x2, z2, 4, 0.4); slab(x1, z1, x2, z2, 8, 0.4);
+      wallZ(z1, z2, x1, 0, 8, 0.35, [[29, 33, 0, 3.2], [29, 33, 4.5, 7]]); // west face
+      wallZ(z1, z2, x2, 0, 8, 0.35, [[31, 35, 4.5, 7]]); // east face
+      wallX(x1, x2, z1, 0, 8, 0.35, [[34, 38, 0, 3.2], [34, 38, 4.5, 7]]); // north face
+      wallX(x1, x2, z2, 0, 8, 0.35, [[35, 41, 4.5, 7]]); // south face
+      stairs(34, 0, 38, '-z', 14, 1.8);
+      rail(x1, z1, x2, z1, 8); rail(x1, z2, x2, z2, 8); rail(x1, z1, x1, z2, 8); rail(x2, z1, x2, z2, 8);
+      jumpPad(36, 8, 33, 18);
+      pickup(38, 8, 34); sniper(32, 8, 28);
+    }
     // scattered cover in the open middle areas
     box(-16, 0, -8, 2.2, 1.2, 2.2); box(18, 0, -10, 2.2, 1.6, 2.2); box(-20, 0, 8, 1.6, 1.0, 3); box(20, 0, -2, 3, 1.0, 1.6);
     box(-8, 0, -18, 4, 1.1, 1.2); box(8, 0, -18, 4, 1.1, 1.2); box(0, 0, 22, 5, 0.5, 1.4); box(-24, 0, -18, 2.4, 2.6, 2.4, { ink: INK.ORANGE }); box(26, 0, -18, 2.4, 2.6, 2.4, { ink: INK.GREEN });
@@ -308,8 +469,12 @@ function buildDistrict(B, arena = false) {
     }
   }
 
-  L.teamSpawns = [[-40, 0, 18], [-34, 12, 12], [-48, 7, -30], [-52, 0, 30], [-30, 7, -48]].map(([x, y, z]) => new THREE.Vector3(x, y, z));
-  L.teamSpawns = [L.teamSpawns, [[40, 0, 8], [34, 12, 18], [48, 7, -30], [52, 0, 30], [16, 7, -45]].map(([x, y, z]) => new THREE.Vector3(x, y, z))];
+  L.teamSpawns = [
+    // Equipo Azul (Base Suroeste / Carril Izquierdo)
+    [[-42, 0, 18], [-36, 0, 30], [-34, 12.2, 12], [-46, 0, -4], [-28, 0, 32], [-48, 7.2, -30]].map(([x, y, z]) => new THREE.Vector3(x, y, z)),
+    // Equipo Rojo (Base Sureste / Carril Derecho)
+    [[42, 0, 18], [36, 0, 30], [34, 12.2, 18], [46, 0, -4], [28, 0, 32], [48, 7.2, -30]].map(([x, y, z]) => new THREE.Vector3(x, y, z)),
+  ];
   if (!arena) planes(3, 30, 30, { rStep: 8, hStep: 6, scale: 1.4 });
   return B.finish();
 }
@@ -329,7 +494,7 @@ function buildDistrict(B, arena = false) {
 // a church with a bell tower, adobe houses, a market of piñatas, a taco cart, and mesas all around.
 // Pots, crates, barrels, cacti and piñatas all break.
 function buildMexico(B, arena = false) {
-  const { L, box, slab, stairs, rail, cyl, sphere, ring, spawn, sniper, pickup, planes, addGeo, collider, scene } = B;
+  const { L, box, slab, stairs, rail, cyl, sphere, ring, spawn, sniper, pickup, planes, addGeo, collider, scene, jumpPad } = B;
   const OR = INK.ORANGE, GR = INK.GREEN, PK = INK.PINK, BK = INK.BLACK, BL = INK.BLUE;
   L.key = 'mexico'; L.playerStart.set(0, 0, 16); const P = 62; L.bounds = { minX: -P, maxX: P, minZ: -P, maxZ: P };
   const mat = (ink, fill = false) => makeInkMaterial({ ink, fill, side: fill ? THREE.DoubleSide : THREE.FrontSide });
@@ -451,6 +616,11 @@ function buildMexico(B, arena = false) {
   box(-12, 0, -12, 8, 1.1, 0.5, { ink: OR }); box(12, 0, -12, 8, 1.1, 0.5, { ink: OR }); box(-30, 0, 34, 0.5, 1.1, 8, { ink: OR }); box(30, 0, 34, 0.5, 1.1, 8, { ink: OR });
   cyl(-14, 0, 8, 1.3, 1.0); box(-14, 1, 8, 0.15, 2.0, 0.15, { noCollide: true, ink: BK }); box(-14, 3, 8, 2.2, 0.3, 0.3, { noCollide: true, ink: BK });
 
+  // interactive jump pads
+  jumpPad(-28, 0, -2, 20);
+  jumpPad(28, 0, -2, 20);
+  jumpPad(0, 0, 24, 22);
+
   // ---------------- where things are: perches, pickups, match spawns ----------------
   for (const [x, y, z] of [[-10, 30.6, 46], [10, 15, 46], [-40, 7.5, 14], [40, 7, -18], [0, 5.9, -26], [0, 13.45, 0]]) sniper(x, y, z);
   for (const [x, y, z] of [[0, 1.25, 8], [-20, 0, 0], [20, 0, -14], [0, 0, -36], [-40, 6, -20], [40, 5.5, 0], [0, 11, 44], [0, 13.5, 0], [-24, 0, 24], [24, 0, 24]]) pickup(x, y, z);
@@ -464,7 +634,181 @@ function buildMexico(B, arena = false) {
   B.finish(); return L;
 }
 
+// ============================ map 3: Cañón de Papel (Paper Canyon) ============================
+// A gorge cut into the notebook: an ink river, stepped cliff terraces, rope bridges,
+// giant trees (árboles grandes) with thick trunks, branching canopies, treehouse perches,
+// stone spires, and interactive jump pads.
+function buildCanyon(B, arena = false) {
+  const { L, box, slab, stairs, rail, cyl, sphere, ring, spawn, sniper, pickup, planes, addGeo, collider, jumpPad } = B;
+  L.key = 'canyon'; L.playerStart.set(-2, 0, 9); L.bounds = { minX: -60, maxX: 60, minZ: -60, maxZ: 60 };
+  L.teamSpawns = [[], []];
+  const BK = INK.BLACK, GR = INK.GREEN, OR = INK.ORANGE, PK = INK.PINK, BL = INK.BLUE;
+
+  const bush = (x, y, z, s = 1) => {
+    for (let i = 0; i < 3; i++) sphere(x + (i - 1) * 0.55 * s, y + 0.45 * s + (i % 2) * 0.2 * s, z + (i % 2 ? 0.3 : -0.2) * s, (0.5 + (i % 2) * 0.15) * s, { seg: 7, ink: GR });
+  };
+  const flowers = (x, y, z, n = 4) => {
+    for (let i = 0; i < n; i++) {
+      const fx = x + rand(-1.4, 1.4), fz = z + rand(-1.4, 1.4);
+      box(fx, y, fz, 0.05, 0.42, 0.05, { noCollide: true, ink: GR });
+      sphere(fx, y + 0.48, fz, 0.13, { seg: 6, ink: PK });
+    }
+  };
+  const spire = (x, z, baseY, h, w = 2.2, o = {}) => {
+    box(x, baseY, z, w, h * 0.55, w);
+    box(x, baseY + h * 0.55, z, w * 0.72, h * 0.3, w * 0.72);
+    box(x, baseY + h * 0.85, z, w * 0.42, h * 0.15, w * 0.42);
+    ring(x, baseY + h + 0.9, z, 'y');
+    if (o.mid) ring(x + w * 0.5 + 0.7, baseY + h * 0.5, z, 'x');
+  };
+
+  // ---------------- Árboles Grandes Procedurales ----------------
+  // Árboles gigantes de tinta con raíces, tronco leñoso, ramas, copa frondosa de esferas y miradores habitables
+  const bigTree = (x, y, z, h = 14, trunkR = 1.4, canopyR = 5.2, hasPerch = false) => {
+    // Raíces
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU + 0.3;
+      box(x + Math.cos(a) * (trunkR + 0.5), y, z + Math.sin(a) * (trunkR + 0.5), 0.9, 1.3, 0.9, { ink: BK });
+    }
+    // Tronco leñoso macizo
+    cyl(x, y, z, trunkR, h, { ink: OR, seg: 12 });
+    // Ramas en la copa
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU;
+      box(x + Math.cos(a) * (trunkR + 1.2), y + h - 2.5, z + Math.sin(a) * (trunkR + 1.2), 2.2, 0.6, 0.6, { ink: OR });
+      ring(x + Math.cos(a) * (trunkR + 2.2), y + h - 2.8, z + Math.sin(a) * (trunkR + 2.2), 'y');
+    }
+    // Gran follaje verde procedural con esferas encimadas
+    sphere(x, y + h + canopyR * 0.4, z, canopyR, { seg: 10, ink: GR });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU;
+      sphere(x + Math.cos(a) * (canopyR * 0.65), y + h + canopyR * 0.25, z + Math.sin(a) * (canopyR * 0.65), canopyR * 0.6, { seg: 8, ink: GR });
+    }
+    sphere(x, y + h + canopyR * 0.85, z, canopyR * 0.7, { seg: 9, ink: GR });
+
+    // Mirador o caseta transitable en la copa
+    if (hasPerch) {
+      const ph = y + h * 0.65;
+      slab(x - 3.2, z - 3.2, x + 3.2, z + 3.2, ph, 0.35, { ink: OR });
+      rail(x - 3.2, z - 3.2, x + 3.2, z - 3.2, ph, { ink: OR });
+      rail(x - 3.2, z + 3.2, x + 3.2, z + 3.2, ph, { ink: OR });
+      rail(x - 3.2, z - 3.2, x - 3.2, z + 3.2, ph, { ink: OR });
+      rail(x + 3.2, z - 3.2, x + 3.2, z + 3.2, ph, { ink: OR });
+      sniper(x, ph, z);
+      pickup(x, ph, z);
+    }
+  };
+
+  // ---------------- floor: canyon bed + ink river ----------------
+  box(0, -3, -10, 128, 3, 12); box(0, -3, 10, 128, 3, 12);
+  box(0, -3, 0, 128, 1.8, 8, { ink: BK });
+  box(0, -1.2, 0, 128, 0.02, 7.6, { noCollide: true, ink: BK });
+  for (let x = -56; x <= 56; x += 7) box(x + rand(-1, 1), -1.19, rand(-2.4, 2.4), rand(1.2, 2.6), 0.02, 0.18, { noCollide: true, ink: BL });
+  for (const x of [-44, -18, 12, 38]) { stairs(x, -1.2, -2.5, '-z', 3, 3, { rise: 0.4, run: 0.5 }); stairs(x + 6, -1.2, 2.5, '+z', 3, 3, { rise: 0.4, run: 0.5 }); }
+  for (const [x, z, r] of [[-30, 0.4, 1.1], [-27.6, -1.3, 0.8], [4, 1.2, 1.0], [6.4, -0.6, 0.9], [26, 0.2, 1.2]]) box(x, -1.2, z, r * 2, 1.3, r * 2);
+
+  // ---------------- north cliff: three terraces ----------------
+  slab(-64, -30, 64, -16, 4, 4);        // T1  y=4
+  slab(-64, -42, 64, -30, 8, 8);        // T2  y=8
+  slab(-64, -52, 64, -42, 12, 12);      // T3  y=12
+  box(0, 0, -58, 128, 26, 12);          // back wall
+  for (const x of [-40, 20]) stairs(x, 0, -9.7, '-z', 14, 3.6);
+  for (const x of [-8, 46]) stairs(x, 4, -23.7, '-z', 14, 3.6);
+  for (const x of [-50, 10]) stairs(x, 8, -35.7, '-z', 14, 3.6);
+  slab(-24, -16.4, -12, -13.2, 4.3, 0.5); slab(30, -16.4, 38, -13.6, 4.3, 0.5); slab(-58, -30.4, -48, -27.6, 8.3, 0.5); slab(22, -42.4, 32, -39.4, 12.3, 0.5);
+  for (const [x, y, z, r] of [[-30, 4, -24, 1.6], [36, 4, -26, 1.3], [-18, 8, -36, 1.8], [30, 8, -34, 1.4], [-40, 12, -47, 1.5], [0, 12, -48, 2.0], [50, 12, -46, 1.2]]) { sphere(x, y + r * 0.8, z, r, { seg: 9 }); collider(x, y, z, r * 1.5, r * 1.6, r * 1.5); }
+  spire(-4, -23, 4, 12, 2.4, { mid: true }); spire(40, -36, 8, 10, 2.0); spire(-46, -47, 12, 9, 2.0);
+  box(38, 12, -52.05, 3.2, 14, 0.3, { noCollide: true, ink: BK }); box(38, 12.02, -49, 5, 0.02, 5, { noCollide: true, ink: BK });
+  for (let i = 0; i < 5; i++) box(36.8 + i * 0.7, 12.5 + (i % 2) * 5, -52.2, 0.12, 6, 0.12, { noCollide: true, ink: BL });
+  bush(-52, 4, -20, 1.2); bush(12, 4, -27, 1); bush(-30, 8, -40, 1.3); bush(56, 8, -33); bush(20, 12, -50, 1.4); flowers(-12, 4, -20); flowers(44, 8, -38); flowers(-28, 12, -46, 6);
+
+  // Árboles grandes en acantilado norte
+  bigTree(-32, 4, -22, 13, 1.4, 5.0, true);
+  bigTree(24, 4, -22, 14, 1.5, 5.2, true);
+  bigTree(-12, 8, -36, 15, 1.6, 5.6, true);
+  bigTree(42, 8, -36, 13, 1.3, 4.8, false);
+  bigTree(14, 12, -47, 16, 1.7, 5.8, true);
+
+  // ---------------- south cliff: different heights, different rhythm ----------------
+  slab(-64, 16, 64, 26, 3, 3);          // S1  y=3
+  slab(-64, 26, 64, 40, 7, 7);          // S2  y=7
+  slab(-64, 40, 64, 50, 11, 11);        // S3  y=11
+  box(0, 0, 56, 128, 26, 12);           // back wall
+  for (const x of [-26, 34]) stairs(x, 0, 11.05, '+z', 11, 3.6, { rise: 3 / 11 });
+  for (const x of [2, -52]) stairs(x, 3, 19.7, '+z', 14, 3.6);
+  for (const x of [-30, 40]) stairs(x, 7, 33.7, '+z', 14, 3.6);
+  slab(-6, 13.2, 6, 16.4, 3.3, 0.5); slab(-48, 23.6, -40, 26.4, 7.3, 0.5); slab(14, 37.6, 26, 40.4, 11.3, 0.5);
+  for (const [x, y, z, r] of [[-44, 3, 21, 1.5], [18, 3, 22, 1.2], [-10, 7, 33, 1.7], [50, 7, 30, 1.4], [-20, 11, 45, 1.6], [34, 11, 46, 1.3]]) { sphere(x, y + r * 0.8, z, r, { seg: 9 }); collider(x, y, z, r * 1.5, r * 1.6, r * 1.5); }
+  spire(22, 21, 3, 13, 2.4, { mid: true }); spire(-38, 33, 7, 11, 2.0); spire(6, 45, 11, 9, 2.0);
+  bush(-16, 3, 19, 1.1); bush(46, 3, 24); bush(28, 7, 36, 1.3); bush(-56, 11, 44, 1.2); flowers(4, 3, 20); flowers(-30, 7, 30, 6); flowers(44, 11, 46);
+
+  // Árboles grandes en acantilado sur
+  bigTree(-40, 3, 21, 13, 1.4, 5.0, true);
+  bigTree(16, 3, 22, 14, 1.5, 5.4, true);
+  bigTree(-16, 7, 33, 15, 1.6, 5.5, true);
+  bigTree(38, 7, 33, 13, 1.3, 4.8, false);
+  bigTree(-24, 11, 45, 16, 1.7, 5.8, true);
+
+  // Árboles grandes en la ribera del cañón
+  bigTree(-52, 0, -8, 16, 1.7, 5.8, false);
+  bigTree(52, 0, 8, 16, 1.7, 5.8, false);
+
+  // ---------------- crossings & bridges ----------------
+  // puente colgante a y=8 de T2 a S2
+  slab(-1.6, -30, 1.6, 24, 8, 0.3, { ink: OR }); box(0, 7, 24.5, 3.2, 1, 3.2, { ink: OR });
+  for (let z = -29; z < 24; z += 1.2) box(0, 8.02, z, 3.4, 0.03, 0.18, { noCollide: true, ink: BK });
+  rail(-1.6, -30, -1.6, 24, 8, { ink: OR }); rail(1.6, -30, 1.6, 24, 8, { ink: OR });
+  for (const z of [-30, -12, 6, 24]) { box(-1.9, 8, z, 0.25, 2.2, 0.25, { noCollide: true, ink: OR }); box(1.9, 8, z, 0.25, 2.2, 0.25, { noCollide: true, ink: OR }); }
+  // lápiz caído sobre el río a y~2
+  {
+    const g = new THREE.CylinderGeometry(0.9, 0.9, 30, 7); g.rotateX(Math.PI / 2); g.translate(-32, 1.2, 0); addGeo(g, OR); collider(-32, 0.3, 0, 1.8, 1.8, 30);
+    const tip = new THREE.ConeGeometry(0.9, 2.6, 7); tip.rotateX(-Math.PI / 2); tip.translate(-32, 1.2, -16.3); addGeo(tip, BK);
+    const er = new THREE.CylinderGeometry(0.95, 0.95, 1.8, 8); er.rotateX(Math.PI / 2); er.translate(-32, 1.2, 15.9); addGeo(er, PK);
+  }
+  // tubería en lo alto del desfiladero para balancearse
+  {
+    const g = new THREE.CylinderGeometry(0.35, 0.35, 56, 8); g.rotateX(Math.PI / 2); g.translate(30, 13, 0); addGeo(g, BL); collider(30, 12.65, 0, 0.7, 0.7, 56, { noNav: true });
+    for (const z of [-20, -6, 6, 20]) ring(30, 11.9, z, 'x'); box(30, 0, -28, 1.2, 13, 1.2); box(30, 0, 28, 1.2, 13, 1.2);
+  }
+  // arco de roca sobre el río
+  box(-52, -1.2, -5, 3, 12, 3); box(-52, -1.2, 5, 3, 12, 3); box(-52, 10.8, 0, 3.4, 2.2, 13.4); ring(-52, 10.2, 0, 'x');
+  // pilares de piedra en el cañón
+  for (const [x, z, h] of [[-14, -8, 3.4], [-9, 10, 5.2], [16, -10, 4.4], [44, 9, 6.0], [48, -9, 3.0]]) { box(x, 0, z, 2.6, h, 2.6); ring(x, h + 1.1, z, 'y'); }
+
+  // ---------------- trampolines interactivos en el cañón ----------------
+  jumpPad(-28, 4, -22, 22); // lanza hacia la copa y mirador del árbol norte
+  jumpPad(12, 3, 22, 22);  // lanza hacia la copa y mirador del árbol sur
+  jumpPad(0, 0, 8, 24);    // lanza desde el fondo del cañón hasta el puente colgante
+
+  // ---------------- perimeter cliffs ----------------
+  box(-64, 0, 0, 12, 26, 128); box(64, 0, 0, 12, 26, 128);
+
+  // ---------------- spawns, perches, pickups, teams ----------------
+  for (const [x, y, z] of [[-56, 0, -10], [-56, 0, 10], [56, 0, -10], [56, 0, 10], [-20, 4, -20], [26, 4, -24], [-30, 8, -36], [16, 8, -38], [-46, 3, 20], [36, 3, 22], [-14, 7, 34], [46, 7, 32], [-8, 12, -47], [-50, 11, 44]]) spawn(x, y, z);
+  for (const [x, y, z] of [[-40, 12, -46], [8, 12, -47], [50, 12, -48], [-18, 11, 44], [26, 11, 46], [54, 11, 42], [-4, 4, -19], [22, 3, 20]]) sniper(x, y, z);
+  for (const [x, y, z] of [[0, 8, -3], [-32, 2.2, 0], [12, 0, 10], [-20, 0, -11], [-20, 4, -24], [30, 8, -34], [-26, 3, 20], [6, 7, 30], [0, 12, -46], [-40, 11, 45], [40, 0, 0], [-52, 13, 0]]) pickup(x, y, z);
+  for (const [x, y, z] of [[-56, 0, -10], [-56, 0, 10], [-46, 3, 20], [-50, 8, -36], [-40, 12, -46]]) L.teamSpawns[0].push(new THREE.Vector3(x, y, z));
+  for (const [x, y, z] of [[56, 0, -10], [56, 0, 10], [36, 3, 22], [46, 7, 32], [50, 12, -48]]) L.teamSpawns[1].push(new THREE.Vector3(x, y, z));
+
+  // arena spawns
+  for (const [x, y, z] of [
+    [-56, 0, -10], [56, 0, 10], [-20, 4, -20], [26, 4, -24],
+    [-30, 8, -36], [16, 8, -38], [-46, 3, 20], [36, 3, 22],
+    [-14, 7, 34], [46, 7, 32], [-8, 12, -47], [-50, 11, 44],
+    [0, 8, -3], [-32, 2.2, 0], [12, 0, 10], [0, 8, 12]
+  ]) L.arenaSpawns.push(new THREE.Vector3(x, y, z));
+
+  // ---------------- sky: sun, clouds, birds ----------------
+  sphere(-80, 95, -170, 12, { seg: 12 });
+  for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU; const g = new THREE.BoxGeometry(6, 0.7, 0.7); g.rotateZ(a); g.translate(-80 + Math.cos(a) * 19, 95 + Math.sin(a) * 19, -170); addGeo(g, BL); }
+  for (const [cx, cy, cz, sc] of [[50, 70, -180, 1.1], [-150, 60, -40, 1], [140, 66, 30, 0.9], [-30, 82, 185, 1.2]]) for (let i = 0; i < 6; i++) sphere(cx + (i - 2.5) * 5 * sc, cy + Math.sin(i * 1.7) * 2.5 * sc, cz, (4 + (i % 3)) * sc, { seg: 10 });
+  planes(2, 42, 28);
+  B.finish(); return L;
+}
+
 export function buildLevel(scene, world, key = 'district', opts = {}) {
   const B = createBuilder(scene, world);
-  return key === 'mexico' ? buildMexico(B, !!opts.arena) : buildDistrict(B, !!opts.arena);
+  if (key === 'mexico') return buildMexico(B, !!opts.arena);
+  if (key === 'canyon') return buildCanyon(B, !!opts.arena);
+  return buildDistrict(B, !!opts.arena);
 }

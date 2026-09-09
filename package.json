@@ -1,0 +1,14 @@
+{
+  "name": "doodlemakia",
+  "version": "1.0.0",
+    "description": "Distrito Garabato - shooter de supervivencia en primera persona dibujado a bolígrafo sobre papel cuadriculado",
+  "private": true,
+  "scripts": {
+    "dev": "serve .",
+    "start": "serve .",
+    "serve:py": "python serve.py 8910"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
