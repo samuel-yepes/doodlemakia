@@ -4,9 +4,9 @@
   "description": "Distrito Garabato - shooter de supervivencia en primera persona dibujado a bolígrafo sobre papel cuadriculado",
   "private": true,
   "scripts": {
-    "dev": "node server.mjs",
-    "start": "node server.mjs",
-    "serve:static": "serve .",
+    "dev": "serve .",
+    "start": "serve .",
+    "serve:node": "node server.mjs",
     "serve:py": "python serve.py 8910"
   },
   "devDependencies": {
