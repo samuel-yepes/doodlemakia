@@ -8,7 +8,7 @@
 // host has answered with a welcome, so a full or closed lobby can be skipped for the next one.
 
 const PREFIX = 'doodledistrict-';
-const PUBLIC_SLOTS = 16;
+const PUBLIC_SLOTS = 4;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const makeCode = () => Array.from({ length: 5 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
 
@@ -37,93 +37,90 @@ let _resolvedBroker = null;
 export async function getBrokerConfig(forceCheck = false) {
   if (_resolvedBroker && !forceCheck) return _resolvedBroker;
 
-  // Potential local/LAN signaling endpoints to probe (in order of priority)
-  const probeCandidates = [];
+  const isLocalDev = (typeof location !== 'undefined') && (
+    location.hostname === 'localhost' || 
+    location.hostname === '127.0.0.1' || 
+    location.hostname.startsWith('192.168.') || 
+    location.hostname.startsWith('10.')
+  );
 
-  if (typeof location !== 'undefined') {
-    const proto = location.protocol === 'https:' ? 'https:' : 'http:';
-    const currentHost = location.hostname || 'localhost';
-    const currentPort = location.port ? parseInt(location.port, 10) : (location.protocol === 'https:' ? 443 : 80);
+  // 1. LOCAL / LAN MODE (e.g. running node server.mjs on localhost:3000 or 10.x.x.x:3000)
+  if (isLocalDev) {
+    const currentHost = location.hostname;
+    const currentPort = location.port ? parseInt(location.port, 10) : 3000;
 
-    // 1. Current origin endpoint (if page was loaded directly from server.mjs)
-    probeCandidates.push({
-      label: `origen actual (${currentHost}:${currentPort})`,
-      url: '/peerjs/id',
-      host: currentHost,
-      port: currentPort,
-      secure: location.protocol === 'https:'
-    });
+    const localCandidates = [
+      { url: '/peerjs/id', host: currentHost, port: currentPort, secure: location.protocol === 'https:' },
+      { url: `http://${currentHost}:3000/peerjs/id`, host: currentHost, port: 3000, secure: false }
+    ];
 
-    // 2. Current host on port 3000 (if page is running on Live Server 5500, Vite 5173, Python 8765/8910, etc.)
-    if (currentPort !== 3000) {
-      probeCandidates.push({
-        label: `${currentHost}:3000`,
-        url: `${proto}//${currentHost}:3000/peerjs/id`,
-        host: currentHost,
-        port: 3000,
-        secure: false
-      });
+    if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
+      localCandidates.push({ url: 'http://127.0.0.1:3000/peerjs/id', host: '127.0.0.1', port: 3000, secure: false });
     }
 
-    // 3. Localhost / 127.0.0.1 on port 3000
-    if (currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
-      probeCandidates.push({
-        label: '127.0.0.1:3000',
-        url: 'http://127.0.0.1:3000/peerjs/id',
-        host: '127.0.0.1',
-        port: 3000,
-        secure: false
-      });
-      probeCandidates.push({
-        label: 'localhost:3000',
-        url: 'http://localhost:3000/peerjs/id',
-        host: 'localhost',
-        port: 3000,
-        secure: false
-      });
-    } else if (currentPort !== 3000) {
-      probeCandidates.push({
-        label: '127.0.0.1:3000',
-        url: 'http://127.0.0.1:3000/peerjs/id',
-        host: '127.0.0.1',
-        port: 3000,
-        secure: false
-      });
+    for (const c of localCandidates) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 1200);
+        const res = await fetch(c.url, { signal: ctrl.signal, mode: 'cors' });
+        clearTimeout(timer);
+        if (res.ok) {
+          _resolvedBroker = {
+            host: c.host,
+            port: c.port,
+            path: '/',
+            key: 'peerjs',
+            secure: c.secure,
+            debug: 0,
+            config: ICE_CONFIG,
+            isLocal: true
+          };
+          console.log(`[Net] ✅ Conectado al servidor de señalización local en: ${c.host}:${c.port}`);
+          return _resolvedBroker;
+        }
+      } catch (e) {}
     }
   }
 
-  // Probe candidates
-  for (const c of probeCandidates) {
+  // 2. CLOUD / VERCEL MODE (e.g. doodlemakia.vercel.app)
+  // Both host and clients connect to the same reliable public WSS broker (no Cloudflare 429 rate limit)
+  const cloudBrokers = [
+    { host: 'peerjs-server.onrender.com', port: 443, path: '/', secure: true },
+    { host: '0.peerjs.com', port: 443, path: '/', secure: true }
+  ];
+
+  for (const b of cloudBrokers) {
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 1200);
-      const res = await fetch(c.url, { signal: ctrl.signal, mode: 'cors' });
+      const timer = setTimeout(() => ctrl.abort(), 2000);
+      const res = await fetch(`https://${b.host}${b.path}peerjs/id`, { signal: ctrl.signal });
       clearTimeout(timer);
       if (res.ok) {
         _resolvedBroker = {
-          host: c.host,
-          port: c.port,
-          path: '/',
+          host: b.host,
+          port: b.port,
+          path: b.path,
           key: 'peerjs',
-          secure: c.secure,
-          debug: 1,
+          secure: true,
+          debug: 0,
           config: ICE_CONFIG,
-          isLocal: true
+          isCloud: true
         };
-        console.log(`[Net] ✅ Conectado con éxito al servidor local de señalización (${c.label}) en: ${c.host}:${c.port}`);
+        console.log(`[Net] 🌐 Conectado al servidor de señalización en la nube: ${b.host}`);
         return _resolvedBroker;
       }
-    } catch (e) {
-      // Candidate not reachable
-    }
+    } catch (e) {}
   }
 
-  // Fallback to cloud only if no local broker found
-  console.warn('[Net] ⚠️ Servidor local no detectado en puerto 3000. Probando 0.peerjs.com como respaldo…');
+  // Final fallback
   _resolvedBroker = {
+    host: 'peerjs-server.onrender.com',
+    port: 443,
+    path: '/',
+    key: 'peerjs',
+    secure: true,
     debug: 0,
-    config: ICE_CONFIG,
-    isLocal: false
+    config: ICE_CONFIG
   };
   return _resolvedBroker;
 }
@@ -394,7 +391,7 @@ export class Net {
     this._setState('Buscando anfitrión…', onStatus);
     this.peer = await this._newPeer(null); this.id = this.peer.id; this._keepAlive(this.peer);
     this._setState('Negociando WebRTC…', onStatus);
-    const ids = []; for (let i = 0; i < PUBLIC_SLOTS; i++) for (const suf of ['', '-1', '-2', '-3']) ids.push(PREFIX + 'PUB' + i + suf);
+    const ids = []; for (let i = 0; i < PUBLIC_SLOTS; i++) for (const suf of ['', '-1']) ids.push(PREFIX + 'PUB' + i + suf);
     const winner = await new Promise((resolve) => {
       let pending = ids.length, done = false; const attempts = [], offers = []; let gather = null;
       const pick = () => { if (!offers.length) return null; offers.sort((a, b) => (b.welcome.players || 0) - (a.welcome.players || 0)); return offers[0]; };
