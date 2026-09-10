@@ -34,37 +34,96 @@ function peerAvailable() { return typeof window !== 'undefined' && typeof window
 const idFromError = (err) => { const m = /peer\s+(\S+)/.exec(String(err && err.message || '')); return m ? m[1] : null; };
 
 let _resolvedBroker = null;
-async function getBrokerConfig(forceCheck = false) {
+export async function getBrokerConfig(forceCheck = false) {
   if (_resolvedBroker && !forceCheck) return _resolvedBroker;
-  // 1. Probe local/LAN signaling server on current origin (instant, anti-firewall, no 429 rate limit)
-  if (typeof location !== 'undefined' && location.hostname) {
-    try {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 1200);
-      const res = await fetch('/peerjs/id', { signal: ctrl.signal });
-      clearTimeout(t);
-      if (res.ok) {
-        const port = location.port ? parseInt(location.port, 10) : (location.protocol === 'https:' ? 443 : 80);
-        _resolvedBroker = {
-          host: location.hostname,
-          port,
-          path: '/peerjs',
-          secure: location.protocol === 'https:',
-          debug: 0,
-          config: ICE_CONFIG
-        };
-        console.log('[Net] Servidor de señalización local/LAN activo en:', `${location.hostname}:${port}/peerjs`);
-        return _resolvedBroker;
-      }
-    } catch (e) {
-      // Local broker not available
+
+  // Potential local/LAN signaling endpoints to probe (in order of priority)
+  const probeCandidates = [];
+
+  if (typeof location !== 'undefined') {
+    const proto = location.protocol === 'https:' ? 'https:' : 'http:';
+    const currentHost = location.hostname || 'localhost';
+    const currentPort = location.port ? parseInt(location.port, 10) : (location.protocol === 'https:' ? 443 : 80);
+
+    // 1. Current origin endpoint (if page was loaded directly from server.mjs)
+    probeCandidates.push({
+      label: `origen actual (${currentHost}:${currentPort})`,
+      url: '/peerjs/id',
+      host: currentHost,
+      port: currentPort,
+      secure: location.protocol === 'https:'
+    });
+
+    // 2. Current host on port 3000 (if page is running on Live Server 5500, Vite 5173, Python 8765/8910, etc.)
+    if (currentPort !== 3000) {
+      probeCandidates.push({
+        label: `${currentHost}:3000`,
+        url: `${proto}//${currentHost}:3000/peerjs/id`,
+        host: currentHost,
+        port: 3000,
+        secure: false
+      });
+    }
+
+    // 3. Localhost / 127.0.0.1 on port 3000
+    if (currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
+      probeCandidates.push({
+        label: '127.0.0.1:3000',
+        url: 'http://127.0.0.1:3000/peerjs/id',
+        host: '127.0.0.1',
+        port: 3000,
+        secure: false
+      });
+      probeCandidates.push({
+        label: 'localhost:3000',
+        url: 'http://localhost:3000/peerjs/id',
+        host: 'localhost',
+        port: 3000,
+        secure: false
+      });
+    } else if (currentPort !== 3000) {
+      probeCandidates.push({
+        label: '127.0.0.1:3000',
+        url: 'http://127.0.0.1:3000/peerjs/id',
+        host: '127.0.0.1',
+        port: 3000,
+        secure: false
+      });
     }
   }
 
-  // 2. Cloud broker fallback (0.peerjs.com)
+  // Probe candidates
+  for (const c of probeCandidates) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 1200);
+      const res = await fetch(c.url, { signal: ctrl.signal, mode: 'cors' });
+      clearTimeout(timer);
+      if (res.ok) {
+        _resolvedBroker = {
+          host: c.host,
+          port: c.port,
+          path: '/',
+          key: 'peerjs',
+          secure: c.secure,
+          debug: 1,
+          config: ICE_CONFIG,
+          isLocal: true
+        };
+        console.log(`[Net] ✅ Conectado con éxito al servidor local de señalización (${c.label}) en: ${c.host}:${c.port}`);
+        return _resolvedBroker;
+      }
+    } catch (e) {
+      // Candidate not reachable
+    }
+  }
+
+  // Fallback to cloud only if no local broker found
+  console.warn('[Net] ⚠️ Servidor local no detectado en puerto 3000. Probando 0.peerjs.com como respaldo…');
   _resolvedBroker = {
     debug: 0,
-    config: ICE_CONFIG
+    config: ICE_CONFIG,
+    isLocal: false
   };
   return _resolvedBroker;
 }
@@ -212,9 +271,11 @@ export class Net {
           this.code = 'PUB' + slot;
           break;
         } catch (e) {
-          if (!(e && e.type === 'unavailable-id')) {
-            // continue probe
+          if (e && e.type === 'unavailable-id') {
+            continue;
           }
+          // If the signaling server timed out or failed to connect, don't loop through 16 slots!
+          throw e;
         }
       }
       // If all public slots are busy, seamlessly generate a room code so user is never blocked
