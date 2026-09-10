@@ -9,8 +9,19 @@
 
 const PREFIX = 'doodledistrict-';
 const PUBLIC_SLOTS = 4;
-const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const makeCode = () => Array.from({ length: 5 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
+
+export function normalizeRoomCode(raw) {
+  let c = String(raw || '').trim().toUpperCase();
+  if (c.startsWith(PREFIX.toUpperCase())) c = c.slice(PREFIX.length);
+  // Auto-correct visual ambiguities:
+  // Zero vs O:
+  if (/^PUB[O0]$/i.test(c)) return 'PUB0';
+  if (/^PUB[I1L]$/i.test(c)) return 'PUB1';
+  if (/^PUB[O0]-(\d+)$/i.test(c)) return c.replace(/^PUB[O0]/i, 'PUB0');
+  if (/^PUB[I1L]-(\d+)$/i.test(c)) return c.replace(/^PUB[I1L]/i, 'PUB1');
+  return c;
+}
 
 // Public reliable STUN + TURN servers for corporate firewall & Symmetric NAT traversal
 const ICE_CONFIG = {
@@ -295,6 +306,12 @@ export class Net {
     this._keepAlive(this.peer);
     this._startHeartbeat();
     this._setState('Conectado');
+    // If public slot 0 or 1 was claimed, also register visual ambiguity alias (PUB0 <-> PUBO, PUB1 <-> PUBI)
+    if (this.code === 'PUB0') {
+      this.claimAlias('PUBO');
+    } else if (this.code === 'PUB1') {
+      this.claimAlias('PUBI');
+    }
     return this.code;
   }
 
@@ -360,22 +377,42 @@ export class Net {
     this._aliasTimer = setTimeout(attempt, 1500);
   }
 
-  async join(code, meta = {}, onStatus = null) {
-    this.leave(); this.isHost = false; code = String(code || '').trim().toUpperCase();
+  async join(rawCode, meta = {}, onStatus = null) {
+    this.leave(); this.isHost = false;
+    let code = normalizeRoomCode(rawCode);
     if (!code) throw new Error('Ingresa un código de sala');
     this._setState('Buscando anfitrión…', onStatus);
     this.peer = await this._newPeer(null);
     this.id = this.peer.id; this._keepAlive(this.peer);
 
-    // a lobby that changed hosts lives on a generation code; the plain code still finds it
-    const base = code.replace(/-\d+$/, '');
-    const ids = [code, ...['-1', '-2', '-3'].map((suf) => base + suf).filter((c) => c !== code)].map((c) => PREFIX + c);
+    // Build targeted candidate IDs to knock on (checks both 0 and O variants so typos never block joining)
+    const ids = [];
+    if (code === 'PUB0') {
+      ids.push(PREFIX + 'PUB0', PREFIX + 'PUBO');
+    } else if (code === 'PUB1') {
+      ids.push(PREFIX + 'PUB1', PREFIX + 'PUBI');
+    } else {
+      ids.push(PREFIX + code);
+      if (code.includes('O')) ids.push(PREFIX + code.replace(/O/g, '0'));
+      if (code.includes('0')) ids.push(PREFIX + code.replace(/0/g, 'O'));
+    }
+
     let res;
     try {
       res = await this._knockAny(ids, meta, JOIN_TIMEOUT, onStatus);
     } catch (e) {
-      this.leave();
-      throw e;
+      // If direct candidates failed and code has no generation suffix, check if host recently migrated (-1)
+      if (!code.includes('-') && /no lobby/.test(String(e.message))) {
+        try {
+          res = await this._knockAny([PREFIX + code + '-1'], meta, 3000, onStatus);
+        } catch (e2) {
+          this.leave();
+          throw e;
+        }
+      } else {
+        this.leave();
+        throw e;
+      }
     }
     const { hostId, conn, welcome } = res;
     this._adopt(hostId, conn, welcome);
@@ -495,8 +532,14 @@ export class Net {
       };
       const onErr = (err) => {
         if (err && err.type === 'peer-unavailable') {
-          const a = attempts.find((x) => x.hostId === idFromError(err));
-          if (a) failOne(a, new Error('no lobby with that code'));
+          const peerId = idFromError(err);
+          const a = attempts.find((x) => x.hostId === peerId);
+          if (a) {
+            failOne(a, new Error('no lobby with that code'));
+          } else {
+            const nonDone = attempts.find((x) => !x.done);
+            if (nonDone) failOne(nonDone, new Error('no lobby with that code'));
+          }
         }
       };
       this.peer.on('error', onErr);

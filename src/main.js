@@ -11,7 +11,7 @@ import { Effects } from './effects.js';
 import { EnemyManager, BOSSES } from './enemies.js';
 import { Player } from './player.js';
 import { RemotePlayer, encodeLocal } from './players.js';
-import { Net } from './net.js';
+import { Net, normalizeRoomCode } from './net.js';
 import { HUD, CONTROLS_HTML, getControlsHTML } from './hud.js';
 import { audio } from './audio.js';
 import { rand, choose, clamp } from './util.js';
@@ -909,6 +909,7 @@ async function createLobby(isPublic) {
   game.state = 'lobby'; screen = 'lobby'; showStart();
 }
 async function joinLobby(code) {
+  code = normalizeRoomCode(code);
   setStatus('Conectando…');
   try { await net.join(code, { name: myName }); } catch (err) { setStatus(friendlyError(err)); unlockButtons(); return; }
   lobby.isPublic = net.isPublic; lobby.status = '';
@@ -1055,7 +1056,7 @@ function onlineHTML() {
       <div class="row"><button type="button" class="big" id="quickBtn">Partida rápida</button><span class="hint">Únete a una sala pública abierta; si no hay ninguna, creará una para ti</span></div>
       <div class="row split"><span>o</span></div>
       <div class="row"><button type="button" id="createBtn">Crear sala</button><div class="radio"><label><input type="radio" name="vis" value="public" ${lobby.isPublic ? 'checked' : ''}> Pública</label><label><input type="radio" name="vis" value="private" ${lobby.isPublic ? '' : 'checked'}> Privada · Solo amigos</label></div></div>
-      <div class="row"><span>¿Tienes un código?</span><input type="text" id="codeBox" placeholder="CÓDIGO" maxlength="5" autocomplete="off"><button type="button" id="joinBtn">Unirse</button></div>
+      <div class="row"><span>¿Tienes un código?</span><input type="text" id="codeBox" placeholder="CÓDIGO (ej. PUB0)" maxlength="8" autocomplete="off"><button type="button" id="joinBtn">Unirse</button></div>
       <div class="lobbylist" id="lobbylist"><div class="row"><span>Salas públicas</span><button type="button" class="alt" id="refreshBtn">Actualizar</button></div><div class="rows" id="lobbyRows">${lobbyListHTML()}</div></div>
       <div class="status" id="status">${esc(lobby.status || '')}</div>
       ${lobby.rejoinCode ? `<div class="row"><button type="button" class="big" id="rejoinBtn">Volver a unirse a ${esc(lobby.rejoinCode)}</button></div>` : ''}
@@ -1070,6 +1071,7 @@ function lobbyHTML() {
     <div class="online" id="online">
       <div class="row room-code-row">
         <span>Código de Sala:</span><span class="code">${code}</span>
+        ${code === 'PUB0' ? '<span class="code-subhint" style="font-size:12px;color:var(--amber);margin-left:8px;">(número <b>0</b> cero · o usa «Partida rápida»)</span>' : ''}
         <button type="button" class="alt" id="copyLinkBtn">Copiar enlace</button>
       </div>
 
@@ -1177,12 +1179,22 @@ function wireOnline() {
     const pub = box.querySelector('input[name=vis]:checked')?.value === 'public';
     createLobby(pub);
   });
+  const codeBox = q('codeBox');
+  if (codeBox) {
+    codeBox.addEventListener('input', () => {
+      let val = codeBox.value.toUpperCase().replace(/\s+/g, '');
+      if (val === 'PUBO') val = 'PUB0';
+      else if (val === 'PUBI') val = 'PUB1';
+      codeBox.value = val;
+    });
+    codeBox.addEventListener('keydown', (e) => { if (e.key === 'Enter') q('joinBtn')?.click(); });
+  }
   if (q('joinBtn')) q('joinBtn').addEventListener('click', () => {
-    const c = (q('codeBox')?.value || '').trim();
+    let c = (q('codeBox')?.value || '').trim();
     if (!c) { setStatus('Escribe un código de sala'); return; }
+    c = normalizeRoomCode(c);
     lockButtons(box); joinLobby(c);
   });
-  if (q('codeBox')) q('codeBox').addEventListener('keydown', (e) => { if (e.key === 'Enter') q('joinBtn').click(); });
   if (q('refreshBtn')) q('refreshBtn').addEventListener('click', () => refreshLobbies());
   if (q('rejoinBtn')) q('rejoinBtn').addEventListener('click', () => { const c = lobby.rejoinCode; lobby.rejoinCode = null; lockButtons(box); joinLobby(c); });
   if (q('backBtn')) q('backBtn').addEventListener('click', () => { screen = 'main'; showStart(); });
@@ -1429,7 +1441,7 @@ for (const ev of ['pointerdown', 'keydown']) window.addEventListener(ev, () => {
 hud.setDevice(input.usingGamepad); applySettings(); hud.setWeapon(player.weapon.name, player.weapon.hint); showStart();
 const urlRoom = new URLSearchParams(window.location.search).get('room');
 if (urlRoom) {
-  const code = urlRoom.trim().toUpperCase();
+  const code = normalizeRoomCode(urlRoom);
   if (code) {
     screen = 'online';
     showStart();
