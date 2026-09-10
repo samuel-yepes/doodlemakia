@@ -39,7 +39,7 @@ export class Player {
   }
   setTeam(team) {
     this.team = team;
-    const ink = (team === 'red' || team === 1) ? INK.RED : INK.BLUE;
+    const ink = (team === 'red' || team === 1) ? INK.MAGENTA : INK.CYAN;
     for (const w of this.weapons) {
       if (w && w.setTeamInk) w.setTeamInk(ink);
     }
@@ -334,7 +334,7 @@ export class Player {
   launchCanister(origin, dir) {
     const ctx = this.ctx;
     const g = new THREE.Group();
-    const bodyMat = makeInkMaterial({ ink: (this.team === 'red' || this.team === 1) ? INK.RED : INK.BLUE });
+    const bodyMat = makeInkMaterial({ ink: (this.team === 'red' || this.team === 1) ? INK.MAGENTA : INK.CYAN });
     const capMat = makeInkMaterial({ ink: INK.ORANGE });
     const darkMat = makeInkMaterial({ ink: INK.BLACK });
     const mainBody = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.26, 8), bodyMat);

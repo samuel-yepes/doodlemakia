@@ -1,16 +1,32 @@
-// Ink renderer: scene is drawn into a data buffer (shade, inkId, normal.xy) + depth, then a
-// full-screen "pen on lined paper" pass draws outlines, hatching, paper grain and ruled lines.
+// Cyberpunk / Tron Neon Renderer: scene is drawn into a data buffer (shade, inkId, normal.xy) + depth,
+// then a high-performance GLSL post-processing pass renders glowing neon contours, circuit grids,
+// multi-tap procedural bloom, and dark cyber atmospheric fog.
 import * as THREE from 'three';
 
-export const INK = { BLUE: 0, RED: 1, BLACK: 2, ORANGE: 3, GREEN: 4, PINK: 5 };
+export const INK = {
+  CYAN: 0,
+  MAGENTA: 1,
+  DARK: 2,
+  AMBER: 3,
+  GREEN: 4,
+  WHITE: 5,
+  // Backward compatibility aliases
+  BLUE: 0,
+  RED: 1,
+  BLACK: 2,
+  ORANGE: 3,
+  PINK: 1,
+};
+
 export const INK_COLORS = [
-  new THREE.Vector3(0.10, 0.19, 0.76), // blue ballpoint
-  new THREE.Vector3(0.86, 0.12, 0.20), // red pen
-  new THREE.Vector3(0.18, 0.20, 0.26), // graphite
-  new THREE.Vector3(0.92, 0.55, 0.08), // orange highlighter
-  new THREE.Vector3(0.12, 0.60, 0.30), // green
-  new THREE.Vector3(0.90, 0.40, 0.66), // pink eraser
+  new THREE.Vector3(0.00, 0.94, 1.00), // 0: electric cyan (#00f0ff)
+  new THREE.Vector3(1.00, 0.00, 0.50), // 1: neon magenta (#ff007f)
+  new THREE.Vector3(0.035, 0.05, 0.08), // 2: carbon graphite (#090d15)
+  new THREE.Vector3(1.00, 0.67, 0.00), // 3: neon amber (#ffaa00)
+  new THREE.Vector3(0.00, 1.00, 0.40), // 4: neon emerald green (#00ff66)
+  new THREE.Vector3(0.90, 0.98, 1.00), // 5: bright white plasma (#e6fcff)
 ];
+
 export const LIGHT_WORLD = new THREE.Vector3(0.38, 0.82, 0.42).normalize();
 export const shared = { uLightDir: { value: new THREE.Vector3(0, 1, 0) }, uTime: { value: 0 } };
 
@@ -58,13 +74,13 @@ void main() {
 export function makeInkMaterial(opts = {}) {
   const m = new THREE.ShaderMaterial({
     uniforms: {
-      uInk: { value: opts.ink ?? INK.BLUE }, uFill: { value: opts.fill ? 1 : 0 },
+      uInk: { value: opts.ink ?? INK.CYAN }, uFill: { value: opts.fill ? 1 : 0 },
       uShadeScale: { value: opts.shadeScale ?? 1.0 }, uShadeBias: { value: opts.shadeBias ?? 0.0 },
       uLightDir: shared.uLightDir, uTime: shared.uTime,
     },
     vertexShader: inkVert, fragmentShader: inkFrag, side: opts.side ?? THREE.FrontSide,
   });
-  m.inkId = opts.ink ?? INK.BLUE;
+  m.inkId = opts.ink ?? INK.CYAN;
   return m;
 }
 export function setInk(mat, ink) { mat.uniforms.uInk.value = ink; mat.inkId = ink; }
@@ -87,145 +103,141 @@ uniform float uFar;
 uniform float uHurt;
 uniform float uFlash;
 uniform float uSlow;
-uniform float uLineSpacing;
 uniform float uLowHp;
-uniform vec3 uPaper;
 uniform vec3 uInks[6];
 uniform mat4 uInvProj;
 uniform mat4 uInvView;
 
-float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float vnoise(vec2 p) {
-  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  float a = hash21(i), b = hash21(i + vec2(1.0, 0.0)), c = hash21(i + vec2(0.0, 1.0)), d = hash21(i + vec2(1.0, 1.0));
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
 float linDepth(float z) { float zn = z * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - zn * (uFar - uNear)); }
 vec3 inkColor(float id) {
   int i = int(id + 0.5);
   if (i <= 0) return uInks[0]; if (i == 1) return uInks[1]; if (i == 2) return uInks[2];
   if (i == 3) return uInks[3]; if (i == 4) return uInks[4]; return uInks[5];
 }
-float stripes(vec2 p, vec2 dir, float spacing, float width) {
-  float t = dot(p, vec2(-dir.y, dir.x));
-  float f = abs(fract(t / spacing) - 0.5) * spacing;
-  float soft = width * 0.6;
-  return 1.0 - smoothstep(width * 0.5 - soft, width * 0.5 + soft, f);
+
+float gridPulse(vec2 p, float spacing, float width) {
+  vec2 f = abs(fract(p / spacing) - 0.5) * spacing;
+  float d = min(f.x, f.y);
+  return 1.0 - smoothstep(0.0, width, d);
 }
+
 void main() {
   vec2 px = 1.0 / uRes;
   float sc = uRes.y / 900.0;
-  vec2 nuv = vUv * vec2(uAspect, 1.0);
-  vec2 wob = vec2(vnoise(nuv * 6.0 + 11.3), vnoise(nuv * 6.0 + 37.0)) - 0.5;
-  vec2 suv = vUv + wob * 2.0 * sc * px;
+  vec2 suv = vUv;
   vec4 s = texture2D(tScene, suv);
   float z = texture2D(tDepth, suv).x;
   float d = linDepth(z);
-  float o = 1.15 * sc;
+
+  // Edge detection via inverse depth differences and normal divergence
+  float o = 1.25 * sc;
   vec2 ox = vec2(o, 0.0) * px, oy = vec2(0.0, o) * px;
   float zl = texture2D(tDepth, suv - ox).x, zr = texture2D(tDepth, suv + ox).x;
   float zu = texture2D(tDepth, suv + oy).x, zd = texture2D(tDepth, suv - oy).x;
   vec4 sl = texture2D(tScene, suv - ox), sr = texture2D(tScene, suv + ox);
   vec4 su = texture2D(tScene, suv + oy), sd = texture2D(tScene, suv - oy);
-  // Edge test in inverse depth (1/d). For ANY plane - including ones seen at a
-  // grazing angle, like the floor - 1/d is affine across the screen, so its second
-  // difference is zero there and only real silhouettes register.
-  // Distance-weighted threshold: near covers/structures receive lower threshold & bolder weight,
-  // while distant elements receive softer, sparser lines to eliminate clutter.
+
   float iw = 1.0 / d;
   float lap = abs(1.0 / linDepth(zl) + 1.0 / linDepth(zr) - 2.0 * iw)
             + abs(1.0 / linDepth(zu) + 1.0 / linDepth(zd) - 2.0 * iw);
-  float edgeLo = mix(0.045, 0.095, smoothstep(8.0, 48.0, d));
-  float edgeHi = mix(0.22, 0.38, smoothstep(8.0, 48.0, d));
+  float edgeLo = mix(0.035, 0.08, smoothstep(8.0, 60.0, d));
+  float edgeHi = mix(0.18, 0.32, smoothstep(8.0, 60.0, d));
   float edge = smoothstep(edgeLo, edgeHi, lap / (iw + 1e-7));
+
   float nEdge = length(sl.ba - sr.ba) + length(su.ba - sd.ba);
-  edge = max(edge, smoothstep(0.38, 0.82, nEdge));
-  // ink colour of the front-most sample around the edge
+  edge = max(edge, smoothstep(0.32, 0.76, nEdge));
+
+  // Front-most edge ink color identification
   float zmin = z; float inkId = s.g;
   if (zl < zmin) { zmin = zl; inkId = sl.g; }
   if (zr < zmin) { zmin = zr; inkId = sr.g; }
   if (zu < zmin) { zmin = zu; inkId = su.g; }
   if (zd < zmin) { zmin = zd; inkId = sd.g; }
-  float dFront = linDepth(zmin);
   bool sky = z >= 0.99999;
 
-  // Hatching is anchored to the surface itself, not to the screen. The fragment's world position
-  // is rebuilt from depth and the strokes are laid out in world units on whichever pair of axes
-  // faces away from the surface normal, so the pattern stays put on a wall as you move past it.
-  // Line spacing steps in powers of two with distance, which keeps the on-screen density roughly
-  // constant instead of collapsing into moire on far geometry.
-  float shade = s.r;
-  float hatch = 0.0;
+  // Background deep cyber void with subtle starry grid horizon
+  vec3 cyberVoid = vec3(0.02, 0.03, 0.055);
+  vec3 col = cyberVoid;
+
   if (!sky) {
-    if (shade < 0.0) hatch = 1.0;
-    else {
-      vec2 hp; float sp, w;
-      if (d < 2.0) {
-        // the held weapon rides with the camera, so for it the screen is the stable frame
-        hp = gl_FragCoord.xy + wob * 5.0 * sc;
-        sp = 8.5 * sc; w = 1.6 * sc;
+    // Reconstruct world position from depth buffer
+    vec4 clip = vec4(vUv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0);
+    vec4 vpos = uInvProj * clip; vpos /= vpos.w;
+    vec3 wpos = (uInvView * vec4(vpos.xyz, 1.0)).xyz;
+    vec2 nxy = s.ba;
+    vec3 nView = vec3(nxy, sqrt(max(0.0, 1.0 - dot(nxy, nxy))));
+    vec3 wn = normalize(mat3(uInvView) * nView);
+    vec3 an = abs(wn);
+    vec2 surfCoord = an.y > max(an.x, an.z) ? wpos.xz : (an.x > an.z ? wpos.zy : wpos.xy);
+
+    // Subtle Tron digital grid on surfaces
+    float gSpacing = (d < 2.0) ? 0.3 : 2.0;
+    float gThick = (d < 2.0) ? 0.015 : 0.045;
+    float cyberGrid = gridPulse(surfCoord, gSpacing, gThick);
+
+    // Matte carbon/graphite base or emissive fill
+    if (s.r < 0.0) {
+      // Direct emissive fill element
+      col = inkColor(s.g) * 1.35;
+    } else {
+      vec3 surfaceMat = (s.g == 2.0) ? vec3(0.03, 0.045, 0.08) : (inkColor(s.g) * 0.18 + vec3(0.02, 0.03, 0.05));
+      col = surfaceMat;
+      vec3 gridColor = (s.g == 2.0) ? uInks[0] : inkColor(s.g);
+      col += gridColor * cyberGrid * 0.22;
+      // Specular highlight / Fresnel rim
+      float fresnel = pow(1.0 - max(0.0, dot(normalize(-vpos.xyz), nView)), 3.0);
+      col += gridColor * fresnel * 0.18;
+    }
+
+    // High-intensity neon contouring
+    vec3 edgeCol = (inkId == 2.0) ? uInks[0] * 0.85 : inkColor(inkId) * 1.45;
+    col = mix(col, edgeCol, clamp(edge * 1.6, 0.0, 1.0));
+  }
+
+  // Multi-tap Procedural Bloom / Glow Pass (sampling high-luminance neighbors)
+  vec3 bloom = vec3(0.0);
+  float bScale = 2.8 * sc;
+  vec2 bOffsets[8];
+  bOffsets[0] = vec2(-1.5, -1.5) * px * bScale;
+  bOffsets[1] = vec2( 1.5, -1.5) * px * bScale;
+  bOffsets[2] = vec2(-1.5,  1.5) * px * bScale;
+  bOffsets[3] = vec2( 1.5,  1.5) * px * bScale;
+  bOffsets[4] = vec2(-3.2,  0.0) * px * bScale;
+  bOffsets[5] = vec2( 3.2,  0.0) * px * bScale;
+  bOffsets[6] = vec2( 0.0, -3.2) * px * bScale;
+  bOffsets[7] = vec2( 0.0,  3.2) * px * bScale;
+
+  for (int k = 0; k < 8; k++) {
+    vec4 smp = texture2D(tScene, suv + bOffsets[k]);
+    float smpZ = texture2D(tDepth, suv + bOffsets[k]).x;
+    if (smpZ < 0.9999) {
+      if (smp.g != 2.0 || smp.r < 0.0) {
+        bloom += inkColor(smp.g) * 0.14;
       } else {
-        vec4 clip = vec4(vUv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0);
-        vec4 vpos = uInvProj * clip; vpos /= vpos.w;
-        vec3 wpos = (uInvView * vec4(vpos.xyz, 1.0)).xyz;
-        vec2 nxy = s.ba;
-        vec3 nView = vec3(nxy, sqrt(max(0.0, 1.0 - dot(nxy, nxy))));
-        vec3 wn = normalize(mat3(uInvView) * nView);
-        vec3 an = abs(wn);
-        // project onto the plane the surface most faces, so strokes lie flat along it
-        hp = an.y > max(an.x, an.z) ? wpos.xz : (an.x > an.z ? wpos.zy : wpos.xy);
-        // pick the world spacing whose projected width is about nine pixels, quantised to powers
-        // of two so the pattern only changes density in steps and never crawls as you walk
-        float lod = exp2(floor(log2(max(1e-4, (0.0165 * d) / 0.16))));
-        sp = 0.16 * lod;
-        // near objects get denser, bolder pen strokes; distant geometry gets thinner, sparser lines
-        float strokeThick = mix(0.20, 0.12, smoothstep(6.0, 45.0, d));
-        w = sp * strokeThick;
-        hp += (vnoise(hp * (2.5 / sp)) - 0.5) * sp * 0.4; // hand-drawn waver, fixed to the surface
+        bloom += uInks[0] * 0.035;
       }
-      const vec2 d1 = vec2(0.7071, 0.7071);
-      const vec2 d2 = vec2(-0.7071, 0.7071);
-      const vec2 d3 = vec2(0.2588, 0.9659);
-      float h1 = stripes(hp, d1, sp, w);
-      float h2 = stripes(hp, d2, sp * 1.15, w);
-      float h3 = stripes(hp, d3, sp * 0.7, w);
-      hatch = h1 * smoothstep(0.64, 0.5, shade);
-      hatch = max(hatch, h2 * smoothstep(0.42, 0.32, shade));
-      hatch = max(hatch, h3 * smoothstep(0.24, 0.14, shade));
-      hatch = max(hatch, smoothstep(0.12, 0.0, shade) * 0.9);
     }
   }
-  // Soft, clear atmospheric attenuation for distant background sketches
-  float fade = mix(1.0, 0.22, smoothstep(12.0, 75.0, d));
-  float fadeE = mix(1.0, 0.32, smoothstep(24.0, 130.0, dFront));
+  // Add glowing emissive halo
+  col += bloom * 0.75;
 
-  // paper with grain, ruled lines and a red margin
-  vec2 pp = gl_FragCoord.xy;
-  float grain = vnoise(pp * 0.8) * 0.6 + vnoise(pp * 0.17) * 0.4;
-  vec3 paper = uPaper * (0.95 + 0.06 * grain);
-  float ls = uLineSpacing;
-  float ly = mod(pp.y + ls * 0.5, ls);
-  float rule = 1.0 - smoothstep(0.5 * sc, 1.7 * sc, abs(ly - ls * 0.5));
-  paper = mix(paper, vec3(0.58, 0.70, 0.92), rule * 0.5);
-  float margin = 1.0 - smoothstep(0.9 * sc, 2.3 * sc, abs(pp.x - uRes.x * 0.07));
-  paper = mix(paper, vec3(0.92, 0.48, 0.55), margin * 0.55);
+  // Atmospheric exponential distance fog to deep black
+  float fogFactor = 1.0 - exp(-d * 0.012);
+  col = mix(col, cyberVoid, clamp(fogFactor, 0.0, 0.95));
 
-  vec3 col = paper;
-  col = mix(col, inkColor(s.g), hatch * 0.78 * fade);
-  // Edge weight: boosted for close combat and covers, soft for distant perimeter
-  float nearBoost = mix(1.32, 0.62, smoothstep(8.0, 50.0, dFront));
-  float ew = (0.78 + 0.32 * vnoise(pp * 0.35)) * nearBoost;
-  col = mix(col, inkColor(inkId) * 0.94, clamp(edge * ew, 0.0, 1.0) * fadeE);
-
-  // hurt: red scribble vignette; low hp: pulsing
+  // Neon damage vignette / hurt pulse
   vec2 vc = (vUv - 0.5) * vec2(uAspect, 1.0);
-  float vig = smoothstep(0.32, 0.9, length(vc));
-  float scr = 0.55 + 0.45 * stripes(pp + wob * 8.0, normalize(vec2(1.0, 0.8)), 7.0 * sc, 2.2 * sc);
-  float hurt = clamp(uHurt + uLowHp * (0.35 + 0.25 * sin(uTime * 6.0)), 0.0, 1.0);
-  col = mix(col, uInks[1] * 0.9, hurt * vig * scr);
-  col = mix(col, uPaper, uFlash);
-  float lum = dot(col, vec3(0.3, 0.5, 0.2));
-  col = mix(col, vec3(lum) * vec3(0.8, 0.86, 1.0), uSlow * 0.55);
+  float vig = smoothstep(0.28, 0.88, length(vc));
+  float hurt = clamp(uHurt + uLowHp * (0.35 + 0.3 * sin(uTime * 7.0)), 0.0, 1.0);
+  col = mix(col, uInks[1] * 1.6, hurt * vig * 0.85);
+
+  // Muzzle flash / explosion whiteout
+  col = mix(col, uInks[5] * 1.5, uFlash * 0.8);
+
+  // Slowdown matrix cyan wash
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(col, vec3(lum) * uInks[0] * 1.4, uSlow * 0.6);
+
   gl_FragColor = vec4(col, 1.0);
 }`;
 
@@ -236,6 +248,7 @@ export class InkRenderer {
     this.renderer.autoClear = false;
     this.pixelRatio = Math.min(window.devicePixelRatio || 1, 1.5);
     this.scene = new THREE.Scene();
+    this.scene.fog = new THREE.FogExp2(0x040711, 0.012);
     this.camera = new THREE.PerspectiveCamera(80, 1, 0.08, 420);
     const depthTexture = new THREE.DepthTexture(2, 2); depthTexture.format = THREE.DepthFormat; depthTexture.type = THREE.FloatType;
     this.rt = new THREE.WebGLRenderTarget(2, 2, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthTexture, depthBuffer: true, stencilBuffer: false, generateMipmaps: false });
@@ -243,14 +256,14 @@ export class InkRenderer {
       uniforms: {
         tScene: { value: this.rt.texture }, tDepth: { value: depthTexture }, uRes: { value: new THREE.Vector2(2, 2) }, uAspect: { value: 1 },
         uTime: { value: 0 }, uNear: { value: this.camera.near }, uFar: { value: this.camera.far }, uHurt: { value: 0 }, uFlash: { value: 0 }, uSlow: { value: 0 },
-        uLowHp: { value: 0 }, uLineSpacing: { value: 60 }, uPaper: { value: new THREE.Vector3(0.965, 0.955, 0.905) }, uInks: { value: INK_COLORS },
+        uLowHp: { value: 0 }, uInks: { value: INK_COLORS },
         uInvProj: { value: new THREE.Matrix4() }, uInvView: { value: new THREE.Matrix4() },
       },
       vertexShader: postVert, fragmentShader: postFrag, depthTest: false, depthWrite: false,
     });
     this.postScene = new THREE.Scene(); this.postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.post));
-    this._clear = new THREE.Color(1, 0, 0);
+    this._clear = new THREE.Color(0x040711);
     this._ld = new THREE.Vector3();
     this.resize();
     window.addEventListener('resize', () => this.resize());
@@ -261,14 +274,14 @@ export class InkRenderer {
     const rw = Math.floor(w * this.pixelRatio), rh = Math.floor(h * this.pixelRatio);
     this.rt.setSize(rw, rh);
     this.camera.aspect = w / h; this.camera.updateProjectionMatrix();
-    const u = this.post.uniforms; u.uRes.value.set(rw, rh); u.uAspect.value = w / h; u.uLineSpacing.value = rh / 13.5;
+    const u = this.post.uniforms; u.uRes.value.set(rw, rh); u.uAspect.value = w / h;
   }
   render(time, fx = {}) {
     shared.uTime.value = time;
     this.camera.updateMatrixWorld(); this.camera.matrixWorldInverse.copy(this.camera.matrixWorld).invert();
     shared.uLightDir.value.copy(LIGHT_WORLD).transformDirection(this.camera.matrixWorldInverse);
     const r = this.renderer;
-    r.setRenderTarget(this.rt); r.setClearColor(this._clear, 0); r.clear(true, true, false);
+    r.setRenderTarget(this.rt); r.setClearColor(this._clear, 1); r.clear(true, true, false);
     r.render(this.scene, this.camera);
     r.setRenderTarget(null);
     const u = this.post.uniforms; u.uTime.value = time; u.uNear.value = this.camera.near; u.uFar.value = this.camera.far;
@@ -277,3 +290,4 @@ export class InkRenderer {
     r.render(this.postScene, this.postCam);
   }
 }
+

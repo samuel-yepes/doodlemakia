@@ -12,68 +12,147 @@ const nxOf = (dx, d) => dx / (d || 1), nzOf = (dz, d) => dz / (d || 1);
 export const BOSSES = ['boss', 'eraser', 'inkblot'];
 export const STATE_CODES = { spawn: 0, hunt: 1, stunned: 2, dead: 3 }; export const STATE_NAMES = ['spawn', 'hunt', 'stunned', 'dead'];
 export const TYPES = {
-  grunt: { hp: 100, speed: 5.2, weapon: 'rifle', range: 28, stop: 16, keep: 7, burst: 3, burstInt: 0.15, cool: [1.6, 2.6], dmg: 6, spread: 0.055, pspeed: 36, score: 100, scale: 1.0, name: 'Recluta', hat: 'cap', build: { bodyW: 1, headS: 1, limbR: 0.032 } },
-  rusher: { hp: 70, speed: 7.6, weapon: 'blade', lunge: 2.9, reach: 3.0, standoff: 1.9, cool: [1.0, 1.5], dmg: 15, score: 120, scale: 0.95, name: 'Asaltante', hat: 'band', build: { bodyW: 0.82, headS: 0.95, limbR: 0.027 } },
-  heavy: { hp: 320, speed: 3.0, weapon: 'shotgun', range: 18, stop: 9, keep: 5, pellets: 7, cool: [2.4, 3.2], dmg: 5, spread: 0.13, pspeed: 32, score: 260, scale: 1.25, name: 'Blindado', hat: 'helmet', build: { bodyW: 1.55, headS: 0.88, limbR: 0.05 } },
-  sniper: { hp: 60, speed: 3.6, weapon: 'sniper', range: 90, stop: 90, keep: 15, aimTime: 1.7, cool: [2.8, 3.8], dmg: 22, spread: 0.006, pspeed: 95, score: 180, scale: 1.05, name: 'Francotirador', stationary: true, hat: 'hood', build: { bodyW: 0.78, headS: 0.92, limbR: 0.026 } },
-  shield: { hp: 150, speed: 3.8, weapon: 'pistol', range: 20, stop: 8, keep: 4, burst: 2, burstInt: 0.2, cool: [1.8, 2.6], dmg: 5, spread: 0.06, pspeed: 34, score: 200, scale: 1.05, name: 'Escudero', hat: 'helmet', shield: true, build: { bodyW: 1.2, headS: 0.9, limbR: 0.042 } },
-  bomber: { hp: 26, speed: 6.5, weapon: 'bomb', fuseRange: 3.4, fuse: 1.05, blast: 4.2, dmg: 24, score: 150, scale: 0.9, name: 'Bomba de tinta', ink: INK.BLACK, model: 'bomber' },
-  flyer: { hp: 40, speed: 6.2, weapon: 'dive', dmg: 10, cool: [2.8, 4.2], score: 140, scale: 1.5, name: 'Avispa de papel', flying: true, model: 'flyer' },
-  boss: { hp: 2600, speed: 3.2, weapon: 'boss', bossKind: 'doodler', range: 32, stop: 6, keep: 0, cool: [2.6, 3.6], dmg: 22, score: 2500, scale: 2.7, name: 'El Garabateador', boss: true, ink: INK.BLACK, hat: 'crown', build: { bodyW: 1.35, headS: 1.15, limbR: 0.06 } },
-  eraser: { hp: 3400, speed: 4.2, weapon: 'boss', bossKind: 'eraser', range: 30, stop: 8, keep: 0, cool: [2.2, 3.2], dmg: 26, score: 3200, scale: 2.6, name: 'El Borrador', boss: true, ink: INK.PINK, model: 'blob', build: {} },
-  inkblot: { hp: 3000, speed: 3.0, weapon: 'boss', bossKind: 'inkblot', range: 34, stop: 10, keep: 0, cool: [2.4, 3.4], dmg: 20, score: 3600, scale: 2.4, name: 'La Mancha de Tinta', boss: true, ink: INK.BLACK, model: 'blob', build: {} },
+  grunt: { hp: 100, speed: 5.2, weapon: 'rifle', range: 28, stop: 16, keep: 7, burst: 3, burstInt: 0.15, cool: [1.6, 2.6], dmg: 6, spread: 0.055, pspeed: 36, score: 100, scale: 1.0, name: 'Androide Táctico', ink: INK.AMBER, hat: 'cap', build: { bodyW: 1, headS: 1, limbR: 0.036 } },
+  rusher: { hp: 70, speed: 7.6, weapon: 'blade', lunge: 2.9, reach: 3.0, standoff: 1.9, cool: [1.0, 1.5], dmg: 15, score: 120, scale: 0.95, name: 'Ciber Shinobi', ink: INK.MAGENTA, hat: 'band', build: { bodyW: 0.85, headS: 0.95, limbR: 0.032 } },
+  heavy: { hp: 320, speed: 3.0, weapon: 'shotgun', range: 18, stop: 9, keep: 5, pellets: 7, cool: [2.4, 3.2], dmg: 5, spread: 0.13, pspeed: 32, score: 260, scale: 1.25, name: 'Mecha Bastión', ink: INK.GREEN, hat: 'helmet', build: { bodyW: 1.55, headS: 0.9, limbR: 0.052 } },
+  sniper: { hp: 60, speed: 3.6, weapon: 'sniper', range: 90, stop: 90, keep: 15, aimTime: 1.7, cool: [2.8, 3.8], dmg: 22, spread: 0.006, pspeed: 95, score: 180, scale: 1.05, name: 'Tirador Espectro', stationary: true, ink: INK.CYAN, hat: 'hood', build: { bodyW: 0.8, headS: 0.92, limbR: 0.03 } },
+  shield: { hp: 150, speed: 3.8, weapon: 'pistol', range: 20, stop: 8, keep: 4, burst: 2, burstInt: 0.2, cool: [1.8, 2.6], dmg: 5, spread: 0.06, pspeed: 34, score: 200, scale: 1.05, name: 'Guardián Égida', ink: INK.CYAN, hat: 'helmet', shield: true, build: { bodyW: 1.22, headS: 0.9, limbR: 0.044 } },
+  bomber: { hp: 26, speed: 6.5, weapon: 'bomb', fuseRange: 3.4, fuse: 1.05, blast: 4.2, dmg: 24, score: 150, scale: 0.9, name: 'Dron Buscador', ink: INK.AMBER, model: 'bomber' },
+  flyer: { hp: 40, speed: 6.2, weapon: 'dive', dmg: 10, cool: [2.8, 4.2], score: 140, scale: 1.5, name: 'Caza Interceptor', ink: INK.CYAN, flying: true, model: 'flyer' },
+  boss: { hp: 2600, speed: 3.2, weapon: 'boss', bossKind: 'doodler', range: 32, stop: 6, keep: 0, cool: [2.6, 3.6], dmg: 22, score: 2500, scale: 2.7, name: 'Titán Arquitecto', boss: true, ink: INK.AMBER, hat: 'crown', build: { bodyW: 1.38, headS: 1.15, limbR: 0.065 } },
+  eraser: { hp: 3400, speed: 4.2, weapon: 'boss', bossKind: 'eraser', range: 30, stop: 8, keep: 0, cool: [2.2, 3.2], dmg: 26, score: 3200, scale: 2.6, name: 'Mecha Demoledor', boss: true, ink: INK.MAGENTA, model: 'blob', build: {} },
+  inkblot: { hp: 3000, speed: 3.0, weapon: 'boss', bossKind: 'inkblot', range: 34, stop: 10, keep: 0, cool: [2.4, 3.4], dmg: 20, score: 3600, scale: 2.4, name: 'Singularidad Cuántica', boss: true, ink: INK.CYAN, model: 'blob', build: {} },
 };
 
-// ---------------- doodle model kit ----------------
-// Everything below is drawn as pen strokes: limbs are slightly bowed tubes, bodies are
-// flattened ovals and none of it is hatched, so enemies read as ink drawings on the page
-// rather than as shaded 3D primitives.
+// ---------------- cyber model kit ----------------
+// High-tech cybernetic androids, armored bastions and pulse drones.
+// Dark carbon composite chassis (INK.DARK) complemented by vibrant glowing neon conduits,
+// tactical visors, and energy reactor cores.
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
 function bx(w, h, d, x, y, z, mat, parent) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); parent.add(m); return m; }
 function sph(r, x, y, z, mat, parent, seg = 8) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, seg, Math.max(4, seg - 2)), mat); m.position.set(x, y, z); parent.add(m); return m; }
-// a flattened oval "drawn" body part
+function cyl(r, h, x, y, z, mat, parent, seg = 8) { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, seg), mat); m.position.set(x, y, z); parent.add(m); return m; }
 function blob(rx, ry, rz, x, y, z, mat, parent) { const m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), mat); m.scale.set(rx, ry, rz); m.position.set(x, y, z); parent.add(m); return m; }
-// a limb: one slightly bowed stroke hanging from its pivot, with a marker at its middle for hit tests
-function noodle(len, r, mat, parent, x, y, z, bow = 0.05) {
+
+// Segmented cyber limb with carbon strut, glowing neon power rail and articulated servo ring
+function cyberLimb(len, r, mat, solid, parent, x, y, z) {
   const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g);
-  const c = new THREE.QuadraticBezierCurve3(V3(0, 0, 0), V3(rand(-bow, bow), -len * 0.5, rand(-bow, bow) + bow * 0.6), V3(0, -len, 0));
-  g.add(new THREE.Mesh(new THREE.TubeGeometry(c, 5, r, 6, false), mat));
+  // Main carbon composite armature
+  const strut = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.05, r * 0.95, len, 6), solid);
+  strut.position.y = -len * 0.5; g.add(strut);
+  // Glowing neon energy conduit along the outer edge
+  const conduit = new THREE.Mesh(new THREE.BoxGeometry(r * 0.5, len * 0.88, r * 0.5), mat);
+  conduit.position.set(0, -len * 0.5, r * 0.75); g.add(conduit);
+  // Servo joint pivot ring
+  const joint = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.35, r * 1.35, r * 0.85, 8), mat);
+  joint.position.y = -len; g.add(joint);
   const mid = new THREE.Object3D(); mid.position.y = -len * 0.55; g.add(mid);
   g.userData.mid = mid; g.userData.len = len; return g;
 }
-function mitten(r, mat, parent, y) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, 7, 5), mat); m.position.y = y; m.scale.set(1, 1.15, 0.8); parent.add(m); return m; }
-function shoe(mat, parent, y, s = 1) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.1 * s, 7, 5), mat); m.position.set(0, y, 0.06 * s); m.scale.set(1, 0.62, 1.9); parent.add(m); return m; }
-// dot eyes, angry brows and a curved mouth, all solid ink so they read at a glance
-function doodleFace(headG, solid, opts = {}) {
+
+// Tactical cyber gauntlet with knuckle armor and glowing palm repulsor
+function cyberGauntlet(r, mat, solid, parent, y) {
+  const g = new THREE.Group(); g.position.y = y; parent.add(g);
+  bx(r * 1.8, r * 1.5, r * 1.1, 0, 0, 0, solid, g);
+  bx(r * 1.9, r * 0.55, r * 1.15, 0, 0, r * 0.35, mat, g);
+  sph(r * 0.45, 0, 0, -r * 0.35, mat, g, 6);
+  return g;
+}
+
+// High-traction magnetic combat boot with glowing sole thrusters
+function cyberBoot(mat, solid, parent, y, s = 1) {
+  const g = new THREE.Group(); g.position.set(0, y, 0.05 * s); parent.add(g);
+  bx(0.14 * s, 0.08 * s, 0.28 * s, 0, 0, 0, solid, g);
+  bx(0.12 * s, 0.02 * s, 0.26 * s, 0, -0.04 * s, 0, mat, g);
+  sph(0.035 * s, 0, 0, -0.07 * s, mat, g, 6);
+  return g;
+}
+
+// Sleek tactical neon visor with ocular sensor array and offline glitch state
+function cyberFace(headG, mat, solid, opts = {}) {
   const eyes = new THREE.Group(); headG.add(eyes);
-  const ex = opts.ex ?? 0.1, ey = opts.ey ?? 0.03, ez = opts.ez ?? 0.25, er = opts.er ?? 0.045;
+  const ex = opts.ex ?? 0.07, ey = opts.ey ?? 0.03, ez = opts.ez ?? 0.25;
+  const vw = opts.vw ?? 0.22, vh = opts.vh ?? 0.055;
+  // Glowing horizontal neon visor
+  bx(vw, vh, 0.03, 0, ey, ez, mat, eyes);
+  // Twin precision optical sensor nodes inside the visor slit
   for (const sx of [-1, 1]) {
-    const e = sph(er, sx * ex, ey, ez, solid, eyes, 6); e.scale.set(0.85, 1.15, 0.7);
-    const b = bx(0.115, 0.026, 0.026, sx * ex, ey + 0.11, ez - 0.01, solid, eyes); b.rotation.z = sx * -0.5;
+    const e = sph(0.022, sx * ex, ey, ez + 0.015, solid, eyes, 6);
+    e.scale.set(0.9, 1.2, 0.7);
   }
-  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.018, 4, 9, Math.PI * 0.9), solid);
-  mouth.position.set(0, ey - 0.16, ez - 0.02); mouth.rotation.z = opts.smile ? Math.PI : 0; eyes.add(mouth);
+  // Rebreather / vocalizer carbon plate with neon vent
+  bx(0.12, 0.04, 0.02, 0, ey - 0.12, ez - 0.01, solid, eyes);
+  bx(0.09, 0.015, 0.025, 0, ey - 0.12, ez, mat, eyes);
+
+  // Offline / Glitch state when eliminated
   const xeyes = new THREE.Group(); headG.add(xeyes); xeyes.visible = false;
-  for (const sx of [-1, 1]) for (const a of [0.8, -0.8]) { const c = bx(0.13, 0.024, 0.024, sx * ex, ey, ez, solid, xeyes); c.rotation.z = a; }
-  const o = new THREE.Mesh(new THREE.TorusGeometry(0.055, 0.018, 4, 9), solid); o.position.set(0, ey - 0.17, ez - 0.02); xeyes.add(o);
+  bx(vw, 0.025, 0.03, 0, ey, ez, solid, xeyes);
+  for (const sx of [-1, 1]) {
+    for (const a of [0.75, -0.75]) {
+      const c = bx(0.08, 0.018, 0.025, sx * ex, ey, ez + 0.01, mat, xeyes);
+      c.rotation.z = a;
+    }
+  }
   return { eyes, xeyes };
 }
+
 function buildHat(headG, mat, solid, T) {
   const h = T.hat;
-  if (h === 'cap') { const c = new THREE.Mesh(new THREE.SphereGeometry(0.29, 10, 5, 0, TAU, 0, Math.PI * 0.5), mat); c.position.y = 0.05; c.scale.y = 0.62; headG.add(c); const brim = bx(0.34, 0.035, 0.24, 0, 0.05, 0.24, mat, headG); brim.rotation.x = -0.18; }
-  else if (h === 'band') { const b = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.028, 5, 14), solid); b.rotation.x = Math.PI / 2; b.position.y = 0.11; headG.add(b); for (const [dx, dz, a] of [[0.24, -0.22, 0.5], [0.2, -0.3, -0.3]]) { const t = bx(0.04, 0.03, 0.4, dx, 0.08 - dz * 0.2, -0.26, solid, headG); t.rotation.y = a; } for (let i = 0; i < 4; i++) { const sp = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.2, 4), mat); sp.position.set(-0.12 + i * 0.08, 0.28, 0.02); sp.rotation.z = (i - 1.5) * 0.35; headG.add(sp); } }
-  else if (h === 'helmet') { const c = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 6, 0, TAU, 0, Math.PI * 0.55), mat); c.position.y = 0.0; c.scale.y = 0.85; headG.add(c); const rim = new THREE.Mesh(new THREE.TorusGeometry(0.315, 0.03, 4, 14), mat); rim.rotation.x = Math.PI / 2; rim.position.y = -0.02; headG.add(rim); }
-  else if (h === 'hood') { const c = new THREE.Mesh(new THREE.SphereGeometry(0.33, 10, 7, 0, TAU, 0, Math.PI * 0.62), mat); c.position.y = -0.02; c.scale.set(1.03, 1.15, 0.95); headG.add(c); const tail = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.5, 5), mat); tail.position.set(0, 0.16, -0.3); tail.rotation.x = 1.5; headG.add(tail); }
-  else if (h === 'crown') { for (let i = 0; i < 6; i++) { const a = (i / 6) * TAU; const sp = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.26, 4), mat); sp.position.set(Math.cos(a) * 0.22, 0.34, Math.sin(a) * 0.22); headG.add(sp); } const b = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.035, 4, 14), mat); b.rotation.x = Math.PI / 2; b.position.y = 0.24; headG.add(b); }
+  if (h === 'cap') {
+    // Tactical Recon Crest: dorsal sensor fin & swept brow visor plate
+    const fin = bx(0.04, 0.16, 0.34, 0, 0.22, -0.04, mat, headG); fin.rotation.x = -0.22;
+    const brow = bx(0.28, 0.04, 0.18, 0, 0.08, 0.2, solid, headG); brow.rotation.x = -0.15;
+    bx(0.24, 0.018, 0.19, 0, 0.08, 0.21, mat, headG);
+  }
+  else if (h === 'band') {
+    // Cyber Shinobi Data-Band: glowing forehead data-plate + trailing fiber-optic cables
+    const b = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.026, 5, 14), mat);
+    b.rotation.x = Math.PI / 2; b.position.y = 0.08; headG.add(b);
+    bx(0.18, 0.05, 0.03, 0, 0.08, 0.27, solid, headG);
+    bx(0.14, 0.02, 0.035, 0, 0.08, 0.275, mat, headG);
+    for (const [dx, dz, a] of [[0.18, -0.22, 0.4], [-0.18, -0.22, -0.4]]) {
+      const t = bx(0.03, 0.025, 0.38, dx, 0.06 - dz * 0.15, -0.28, mat, headG); t.rotation.y = a;
+    }
+  }
+  else if (h === 'helmet') {
+    // Heavy Blast Juggernaut Helm: reinforced crown dome, ear comm pods, blast crest
+    const c = new THREE.Mesh(new THREE.SphereGeometry(0.32, 10, 6, 0, TAU, 0, Math.PI * 0.55), solid);
+    c.position.y = 0.0; c.scale.y = 0.85; headG.add(c);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.315, 0.03, 4, 14), mat);
+    rim.rotation.x = Math.PI / 2; rim.position.y = -0.02; headG.add(rim);
+    // Lateral communications pods
+    for (const sx of [-1, 1]) {
+      const pod = cyl(0.065, 0.08, sx * 0.31, 0.04, 0, solid, headG);
+      pod.rotation.z = Math.PI / 2;
+      sph(0.035, sx * 0.36, 0.04, 0, mat, headG, 6);
+    }
+  }
+  else if (h === 'hood') {
+    // Stealth Recon Cowl: faceted angular cowl shroud with dorsal energy spine
+    const c = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.65, 5), solid);
+    c.position.set(0, 0.12, -0.18); c.rotation.x = 1.35; headG.add(c);
+    const spine = bx(0.035, 0.42, 0.035, 0, 0.18, -0.16, mat, headG); spine.rotation.x = 1.35;
+  }
+  else if (h === 'crown') {
+    // Overlord Apex Corona: floating array of glowing energy spires with levitation ring
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * TAU;
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.28, 4), mat);
+      sp.position.set(Math.cos(a) * 0.24, 0.36, Math.sin(a) * 0.24); headG.add(sp);
+      bx(0.03, 0.15, 0.03, Math.cos(a) * 0.24, 0.24, Math.sin(a) * 0.24, solid, headG);
+    }
+    const b = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.028, 4, 14), mat);
+    b.rotation.x = Math.PI / 2; b.position.y = 0.25; headG.add(b);
+  }
 }
+
 export function buildWeaponProp(gun, mat, solid, T) {
   if (T.weapon === 'blade' || T.weapon === 'katana') {
+    // High-frequency energy katana: glowing plasma blade + emitter hilt
     const hilt = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.14, 8), solid);
-    hilt.rotation.z = Math.PI / 2;
-    hilt.position.set(0, 0.02, 0.0);
-    gun.add(hilt);
-    sph(0.024, -0.07, 0.02, 0.0, solid, gun);
-    sph(0.024, 0.07, 0.02, 0.0, solid, gun);
+    hilt.rotation.z = Math.PI / 2; hilt.position.set(0, 0.02, 0.0); gun.add(hilt);
+    sph(0.025, -0.07, 0.02, 0.0, mat, gun);
+    sph(0.025, 0.07, 0.02, 0.0, mat, gun);
     bx(0.07, 0.035, 0.04, 0, 0.02, 0.02, solid, gun);
 
     const s = new THREE.Shape();
@@ -96,48 +175,65 @@ export function buildWeaponProp(gun, mat, solid, T) {
     gun.add(left);
   }
   else if (T.weapon === 'shotgun') {
-    bx(0.1, 0.13, 0.66, 0, 0.02, 0.2, mat, gun);
+    // Cyber Scattergun: double carbon barrel + glowing heat dispersion ribs
+    bx(0.1, 0.13, 0.66, 0, 0.02, 0.2, solid, gun);
     const b = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.5, 6), solid);
     b.rotation.x = Math.PI / 2; b.position.set(0, 0.08, 0.5); gun.add(b);
+    bx(0.11, 0.025, 0.4, 0, 0.09, 0.25, mat, gun);
     bx(0.08, 0.09, 0.22, 0, -0.02, 0.28, mat, gun);
   }
   else if (T.weapon === 'sniper') {
-    bx(0.075, 0.11, 0.6, 0, 0.02, 0.15, mat, gun);
+    // Electromagnetic Railgun: accelerator coils + holographic scope frame
+    bx(0.075, 0.11, 0.6, 0, 0.02, 0.15, solid, gun);
     const b = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.95, 6), solid);
     b.rotation.x = Math.PI / 2; b.position.set(0, 0.05, 0.72); gun.add(b);
+    // 3 glowing accelerator coils along the barrel
+    for (let i = 0; i < 3; i++) {
+      const coil = cyl(0.045, 0.04, 0, 0.05, 0.48 + i * 0.2, mat, gun);
+      coil.rotation.x = Math.PI / 2;
+    }
     bx(0.06, 0.07, 0.22, 0, 0.13, 0.06, mat, gun);
   }
   else if (T.weapon === 'smg') {
-    bx(0.07, 0.1, 0.38, 0, 0.02, 0.12, mat, gun);
+    // Compact Cyber PDW: vented shroud + glowing magazine well
+    bx(0.07, 0.1, 0.38, 0, 0.02, 0.12, solid, gun);
     const b = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.32, 6), solid);
     b.rotation.x = Math.PI / 2; b.position.set(0, 0.04, 0.44); gun.add(b);
     const d = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 0.08, 8), mat);
     d.rotation.z = Math.PI / 2; d.position.set(0, -0.08, 0.12); gun.add(d);
   }
   else if (T.weapon === 'revolver' || T.weapon === 'pistol') {
-    bx(0.055, 0.09, 0.3, 0, 0.03, 0.13, mat, gun);
+    // Heavy Plasma Hand-Cannon: fluted barrel + glowing power cylinder
+    bx(0.055, 0.09, 0.3, 0, 0.03, 0.13, solid, gun);
     bx(0.045, 0.11, 0.055, 0, -0.05, 0, solid, gun);
-    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.09, 6), mat);
-    cyl.rotation.x = Math.PI / 2; cyl.position.set(0, 0.035, 0.1); gun.add(cyl);
+    const cylG = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.1, 8), mat);
+    cylG.rotation.x = Math.PI / 2; cylG.position.set(0, 0.035, 0.1); gun.add(cylG);
+    bx(0.06, 0.015, 0.22, 0, 0.08, 0.15, mat, gun);
   }
   else if (T.weapon === 'launcher') {
-    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.65, 8), mat);
+    // Rocket Pod / Plasma Cannon
+    const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.65, 8), solid);
     tube.rotation.x = Math.PI / 2; tube.position.set(0, 0.05, 0.28); gun.add(tube);
     bx(0.09, 0.12, 0.3, 0, -0.01, 0.1, solid, gun);
     bx(0.06, 0.15, 0.12, 0, -0.12, 0.05, mat, gun);
+    const ring = cyl(0.07, 0.04, 0, 0.05, 0.58, mat, gun); ring.rotation.x = Math.PI / 2;
   }
   else if (T.weapon === 'boss') {
-    const pen = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.4, 7), makeInkMaterial({ ink: INK.ORANGE, shadeScale: 0, shadeBias: 1 }));
-    pen.position.y = 0.7; gun.add(pen);
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.38, 6), solid);
-    tip.position.y = 2.08; gun.add(tip);
-    const er = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.26, 8), makeInkMaterial({ ink: INK.PINK, shadeScale: 0, shadeBias: 1 }));
-    er.position.y = -0.62; gun.add(er);
+    // Titan Halberd / Heavy Particle Staff
+    const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.4, 8), solid);
+    staff.position.y = 0.7; gun.add(staff);
+    // Glowing plasma generator coils along staff
+    for (let i = 0; i < 4; i++) {
+      const c = cyl(0.12, 0.08, 0, -0.2 + i * 0.5, 0, mat, gun);
+    }
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.45, 6), mat);
+    tip.position.y = 2.1; gun.add(tip);
   }
-  else { // rifle
-    bx(0.085, 0.12, 0.5, 0, 0.02, 0.16, mat, gun);
+  else { // rifle: high-velocity plasma carbine
+    bx(0.085, 0.12, 0.5, 0, 0.02, 0.16, solid, gun);
     const b = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.34, 6), solid);
     b.rotation.x = Math.PI / 2; b.position.set(0, 0.05, 0.52); gun.add(b);
+    bx(0.09, 0.02, 0.42, 0, 0.07, 0.18, mat, gun);
     bx(0.05, 0.16, 0.09, 0, -0.09, 0.08, mat, gun);
   }
 }
@@ -145,81 +241,147 @@ export function buildWeaponProp(gun, mat, solid, T) {
 export function buildHumanoid(mat, solid, T) {
   const root = new THREE.Group(); const parts = {}, J = {};
   const build = T.build || {};
-  const bodyW = build.bodyW ?? 1, headS = build.headS ?? 1, limbR = build.limbR ?? 0.032;
-  const jit = rand(0.95, 1.06); // every figure is drawn slightly differently
+  const bodyW = build.bodyW ?? 1, headS = build.headS ?? 1, limbR = build.limbR ?? 0.036;
+  const jit = rand(0.96, 1.04);
   const hips = new THREE.Group(); hips.position.y = 0.86; root.add(hips);
+  bx(0.28 * bodyW, 0.12, 0.18 * bodyW, 0, 0, 0, solid, hips);
+  bx(0.24 * bodyW, 0.025, 0.19 * bodyW, 0, 0.02, 0, mat, hips);
   parts.hips = new THREE.Object3D(); hips.add(parts.hips);
+
   const torso = new THREE.Group(); torso.position.y = 0.04; hips.add(torso);
-  blob(0.3 * bodyW, 0.3, 0.19 * bodyW, 0, 0.26, 0, mat, torso);
+  // High-tech multi-layered cyber torso
+  bx(0.32 * bodyW, 0.44, 0.22 * bodyW, 0, 0.24, 0, solid, torso);
+  bx(0.38 * bodyW, 0.28, 0.08, 0, 0.32, 0.12 * bodyW, solid, torso);
+  // Chest glowing reactor core
+  sph(0.085, 0, 0.32, 0.16 * bodyW, mat, torso, 8);
+  cyl(0.045, 0.05, 0, 0.32, 0.16 * bodyW, solid, torso);
+  // Lateral luminous conduits
+  bx(0.42 * bodyW, 0.022, 0.16, 0, 0.22, 0.06 * bodyW, mat, torso);
+  bx(0.36 * bodyW, 0.022, 0.14, 0, 0.14, 0.04 * bodyW, mat, torso);
+  // Dorsal power pack & heat dissipation fins
+  bx(0.22 * bodyW, 0.32, 0.08, 0, 0.28, -0.13 * bodyW, solid, torso);
+  bx(0.04, 0.28, 0.09, 0, 0.28, -0.13 * bodyW, mat, torso);
   parts.torso = new THREE.Object3D(); parts.torso.position.y = 0.26; torso.add(parts.torso);
-  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.12, 6), mat); neck.position.y = 0.56; torso.add(neck);
+
+  const neck = cyl(0.045, 0.12, 0, 0.54, 0, solid, torso, 6);
   const headG = new THREE.Group(); headG.position.y = 0.62; torso.add(headG);
-  const head = blob(0.275 * headS * jit, 0.3 * headS, 0.25 * headS, 0, 0.26, 0, mat, headG);
+  const head = bx(0.26 * headS * jit, 0.28 * headS, 0.26 * headS, 0, 0.26, 0, solid, headG);
   parts.head = new THREE.Object3D(); parts.head.position.y = 0.26; headG.add(parts.head);
   const faceG = new THREE.Group(); faceG.position.y = 0.26; faceG.scale.setScalar(headS); headG.add(faceG);
-  const fc = doodleFace(faceG, solid, { ez: 0.2 * headS + 0.06, smile: T.weapon === 'blade' });
+  const fc = cyberFace(faceG, mat, solid, { ez: 0.14 * headS + 0.02 });
   const hatG = new THREE.Group(); hatG.position.y = 0.26; hatG.scale.setScalar(headS); headG.add(hatG); buildHat(hatG, mat, solid, T);
+
+  // Armored shoulder pauldrons
   const shY = 0.46, shX = 0.26 * bodyW;
-  const armL = noodle(0.3, limbR, mat, torso, -shX, shY, 0), armR = noodle(0.3, limbR, mat, torso, shX, shY, 0);
-  const foreL = noodle(0.28, limbR * 0.92, mat, armL, 0, -0.3, 0), foreR = noodle(0.28, limbR * 0.92, mat, armR, 0, -0.3, 0);
-  mitten(limbR * 2.3, mat, foreL, -0.3); mitten(limbR * 2.3, mat, foreR, -0.3);
-  const legL = noodle(0.42, limbR * 1.15, mat, hips, -0.13 * bodyW, -0.02, 0), legR = noodle(0.42, limbR * 1.15, mat, hips, 0.13 * bodyW, -0.02, 0);
-  const shinL = noodle(0.42, limbR * 1.05, mat, legL, 0, -0.42, 0), shinR = noodle(0.42, limbR * 1.05, mat, legR, 0, -0.42, 0);
-  shoe(mat, shinL, -0.42, bodyW); shoe(mat, shinR, -0.42, bodyW);
+  bx(0.16, 0.09, 0.18, -shX - 0.04, shY + 0.06, 0, solid, torso);
+  bx(0.18, 0.025, 0.19, -shX - 0.04, shY + 0.1, 0, mat, torso);
+  bx(0.16, 0.09, 0.18, shX + 0.04, shY + 0.06, 0, solid, torso);
+  bx(0.18, 0.025, 0.19, shX + 0.04, shY + 0.1, 0, mat, torso);
+
+  // Segmented cyber limbs
+  const armL = cyberLimb(0.3, limbR, mat, solid, torso, -shX, shY, 0), armR = cyberLimb(0.3, limbR, mat, solid, torso, shX, shY, 0);
+  const foreL = cyberLimb(0.28, limbR * 0.95, mat, solid, armL, 0, -0.3, 0), foreR = cyberLimb(0.28, limbR * 0.95, mat, solid, armR, 0, -0.3, 0);
+  cyberGauntlet(limbR * 2.2, mat, solid, foreL, -0.3);
+  cyberGauntlet(limbR * 2.2, mat, solid, foreR, -0.3);
+  const legL = cyberLimb(0.42, limbR * 1.2, mat, solid, hips, -0.13 * bodyW, -0.02, 0), legR = cyberLimb(0.42, limbR * 1.2, mat, solid, hips, 0.13 * bodyW, -0.02, 0);
+  const shinL = cyberLimb(0.42, limbR * 1.1, mat, solid, legL, 0, -0.42, 0), shinR = cyberLimb(0.42, limbR * 1.1, mat, solid, legR, 0, -0.42, 0);
+  cyberBoot(mat, solid, shinL, -0.42, bodyW);
+  cyberBoot(mat, solid, shinR, -0.42, bodyW);
+
   for (const [k, g] of [['armL', armL], ['armR', armR], ['foreL', foreL], ['foreR', foreR], ['legL', legL], ['legR', legR], ['shinL', shinL], ['shinR', shinR]]) parts[k] = g.userData.mid;
   const gun = new THREE.Group(); gun.position.set(0, -0.29, 0.07); foreR.add(gun); buildWeaponProp(gun, mat, solid, T);
   const tip = new THREE.Object3D(); tip.position.set(0, 0.05, T.weapon === 'blade' ? 0.92 : T.weapon === 'boss' ? 0.4 : 0.78); gun.add(tip);
+
   let shieldG = null;
   if (T.shield) {
     shieldG = new THREE.Group(); shieldG.position.set(-0.17, 0.34, 0.46); torso.add(shieldG);
-    const plate = bx(0.92, 1.3, 0.07, 0, 0, 0, mat, shieldG);
-    bx(0.62, 0.06, 0.09, 0, 0.26, 0.04, solid, shieldG); bx(0.06, 0.62, 0.09, 0, 0.26, 0.04, solid, shieldG);
+    // Translucent hexagonal holographic barrier with glowing energy edge
+    const plate = bx(0.95, 1.35, 0.04, 0, 0, 0, mat, shieldG);
+    bx(0.68, 0.06, 0.08, 0, 0.26, 0.04, solid, shieldG);
+    bx(0.06, 0.68, 0.08, 0, 0.26, 0.04, solid, shieldG);
+    sph(0.09, 0, 0.26, 0.06, mat, shieldG, 8);
     parts.shield = new THREE.Object3D(); shieldG.add(parts.shield);
   }
+
   Object.assign(J, { hips, torso, headG, armL, armR, foreL, foreR, legL, legR, shinL, shinR, gun, shieldG });
   const hit = [['head', 0.3], ['torso', 0.33], ['hips', 0.2], ['armL', 0.11], ['armR', 0.11], ['foreL', 0.1], ['foreR', 0.1], ['legL', 0.13], ['legR', 0.13], ['shinL', 0.11], ['shinR', 0.11]];
   if (T.shield) hit.unshift(['shield', 0.66]);
   root.scale.setScalar(T.scale);
   return { root, parts, J, tip, face: fc, hit };
 }
+
 function buildBomber(mat, solid, T, boss = false) {
   const root = new THREE.Group(); const parts = {}, J = {};
   const hips = new THREE.Group(); hips.position.y = 0.5; root.add(hips);
   const torso = new THREE.Group(); hips.add(torso);
-  blob(0.44, 0.44, 0.44, 0, 0.32, 0, mat, torso);
+  // Dark carbon drone sphere
+  sph(0.44, 0, 0.32, 0, solid, torso, 10);
+  // Glowing containment rings
+  const ring1 = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.024, 4, 16), mat); ring1.position.set(0, 0.32, 0); ring1.rotation.x = Math.PI / 2; torso.add(ring1);
+  const ring2 = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.024, 4, 16), mat); ring2.position.set(0, 0.32, 0); torso.add(ring2);
   parts.torso = new THREE.Object3D(); parts.torso.position.y = 0.32; torso.add(parts.torso); parts.head = parts.torso;
   const headG = new THREE.Group(); headG.position.y = 0.32; torso.add(headG);
-  const fc = doodleFace(headG, solid, { ex: 0.13, ey: 0.1, ez: 0.38, er: 0.06 });
+  const fc = cyberFace(headG, mat, solid, { ex: 0.1, ey: 0.08, ez: 0.42, vw: 0.26, vh: 0.06 });
   let spark = null;
   if (!boss) {
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.13, 0.14, 7), mat); cap.position.y = 0.76; torso.add(cap);
-    const fuse = new THREE.Mesh(new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(V3(0, 0.8, 0), V3(0.16, 1.0, 0), V3(0.24, 1.14, 0)), 5, 0.02, 5, false), solid); torso.add(fuse);
-    spark = new THREE.Mesh(new THREE.SphereGeometry(0.075, 6, 5), makeInkMaterial({ ink: INK.ORANGE, fill: true })); spark.position.set(0.24, 1.14, 0); torso.add(spark);
+    // Pulse beacon and top repulsor
+    const cap = cyl(0.12, 0.12, 0, 0.78, 0, solid, torso, 7);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.02, 4, 12), mat); ring.position.y = 0.78; ring.rotation.x = Math.PI / 2; torso.add(ring);
+    spark = sph(0.075, 0, 0.9, 0, mat, torso, 6);
   } else if (T.bossKind === 'inkblot') {
-    for (let i = 0; i < 9; i++) { const a = (i / 9) * TAU; const sp = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.42, 5), mat); sp.position.set(Math.cos(a) * 0.42, 0.32 + Math.sin(a * 2.3) * 0.25, Math.sin(a) * 0.42); sp.lookAt(Math.cos(a) * 3, 0.32, Math.sin(a) * 3); sp.rotateX(Math.PI / 2); torso.add(sp); }
+    // Quantum Singularity Core: orbiting plasma rings and geometric spires
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * TAU;
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.48, 4), mat);
+      sp.position.set(Math.cos(a) * 0.46, 0.32 + Math.sin(a * 2.3) * 0.25, Math.sin(a) * 0.46);
+      sp.lookAt(Math.cos(a) * 3, 0.32, Math.sin(a) * 3); sp.rotateX(Math.PI / 2); torso.add(sp);
+    }
+    const orbRing = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.03, 4, 16), mat);
+    orbRing.position.set(0, 0.32, 0); orbRing.rotation.x = 0.8; torso.add(orbRing);
   } else {
-    // a chunky rubber block on top: the eraser wears its own head
-    bx(0.7, 0.32, 0.5, 0, 0.86, 0, mat, torso); bx(0.74, 0.05, 0.54, 0, 0.7, 0, solid, torso);
+    // Demolition Behemoth Mech: heavy armored crusher block with glowing hazard radiators
+    bx(0.72, 0.35, 0.52, 0, 0.86, 0, solid, torso);
+    bx(0.76, 0.06, 0.56, 0, 0.7, 0, mat, torso);
+    bx(0.68, 0.025, 0.48, 0, 1.05, 0, mat, torso);
   }
-  const armL = noodle(0.26, 0.03, mat, torso, -0.42, 0.42, 0), armR = noodle(0.26, 0.03, mat, torso, 0.42, 0.42, 0);
-  mitten(0.07, mat, armL, -0.26); mitten(0.07, mat, armR, -0.26);
-  const legL = noodle(0.26, 0.035, mat, hips, -0.16, -0.06, 0), legR = noodle(0.26, 0.035, mat, hips, 0.16, -0.06, 0);
-  const shinL = noodle(0.24, 0.032, mat, legL, 0, -0.26, 0), shinR = noodle(0.24, 0.032, mat, legR, 0, -0.26, 0);
-  shoe(mat, shinL, -0.24, 0.9); shoe(mat, shinR, -0.24, 0.9);
+  // Drone articulated limbs
+  const armL = cyberLimb(0.26, 0.032, mat, solid, torso, -0.42, 0.42, 0), armR = cyberLimb(0.26, 0.032, mat, solid, torso, 0.42, 0.42, 0);
+  cyberGauntlet(0.065, mat, solid, armL, -0.26); cyberGauntlet(0.065, mat, solid, armR, -0.26);
+  const legL = cyberLimb(0.26, 0.038, mat, solid, hips, -0.16, -0.06, 0), legR = cyberLimb(0.26, 0.038, mat, solid, hips, 0.16, -0.06, 0);
+  const shinL = cyberLimb(0.24, 0.034, mat, solid, legL, 0, -0.26, 0), shinR = cyberLimb(0.24, 0.034, mat, solid, legR, 0, -0.26, 0);
+  cyberBoot(mat, solid, shinL, -0.24, 0.9); cyberBoot(mat, solid, shinR, -0.24, 0.9);
   Object.assign(J, { hips, torso, headG, armL, armR, foreL: armL, foreR: armR, legL, legR, shinL, shinR, gun: new THREE.Group(), spark });
   root.scale.setScalar(T.scale);
   const tip = spark || (() => { const o = new THREE.Object3D(); o.position.set(0, 0.5, 0.5); torso.add(o); return o; })();
   return { root, parts, J, tip, face: fc, hit: [['torso', 0.5]] };
 }
+
 function buildFlyer(mat, solid, T) {
   const root = new THREE.Group(); const parts = {}, J = {};
   const body = new THREE.Group(); body.position.y = 0.6; root.add(body);
-  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.25, 3), mat); cone.rotation.x = Math.PI / 2; cone.position.z = 0.08; body.add(cone);
+  // Aerodynamic cyber fuselage
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(0.32, 1.35, 4), solid);
+  cone.rotation.x = Math.PI / 2; cone.rotation.y = Math.PI / 4; cone.position.z = 0.08; body.add(cone);
+  bx(0.18, 0.06, 0.42, 0, 0.14, 0.12, mat, body);
   parts.torso = new THREE.Object3D(); body.add(parts.torso); parts.head = parts.torso;
-  const wl = bx(0.86, 0.025, 0.5, -0.48, 0.04, -0.14, mat, body), wr = bx(0.86, 0.025, 0.5, 0.48, 0.04, -0.14, mat, body);
-  const headG = new THREE.Group(); headG.position.set(0, -0.06, 0.3); headG.scale.setScalar(0.72); body.add(headG);
-  const fc = doodleFace(headG, solid, { ex: 0.11, ey: 0.02, ez: 0.16, er: 0.05 });
-  const tail = bx(0.04, 0.28, 0.3, 0, 0.14, -0.62, mat, body);
+  // Forward-swept wings with glowing leading edges
+  const wl = new THREE.Group(); wl.position.set(-0.48, 0.04, -0.14); body.add(wl);
+  bx(0.86, 0.025, 0.5, 0, 0, 0, solid, wl);
+  bx(0.88, 0.03, 0.035, 0, 0, 0.24, mat, wl);
+  const wr = new THREE.Group(); wr.position.set(0.48, 0.04, -0.14); body.add(wr);
+  bx(0.86, 0.025, 0.5, 0, 0, 0, solid, wr);
+  bx(0.88, 0.03, 0.035, 0, 0, 0.24, mat, wr);
+  // Underslung dual plasma cannons
+  cyl(0.028, 0.45, -0.42, -0.06, 0.12, solid, body);
+  cyl(0.032, 0.06, -0.42, -0.06, 0.35, mat, body);
+  cyl(0.028, 0.45, 0.42, -0.06, 0.12, solid, body);
+  cyl(0.032, 0.06, 0.42, -0.06, 0.35, mat, body);
+  // Rear ion thruster
+  cyl(0.08, 0.12, 0, 0.02, -0.62, mat, body);
+  const headG = new THREE.Group(); headG.position.set(0, -0.06, 0.32); headG.scale.setScalar(0.72); body.add(headG);
+  const fc = cyberFace(headG, mat, solid, { ex: 0.1, ey: 0.02, ez: 0.16, vw: 0.22, vh: 0.05 });
+  const tail = bx(0.04, 0.28, 0.3, 0, 0.14, -0.62, solid, body);
+  bx(0.045, 0.03, 0.28, 0, 0.27, -0.62, mat, body);
   Object.assign(J, { body, wl, wr, headG, torso: body, gun: new THREE.Group() });
   root.scale.setScalar(T.scale);
   return { root, parts, J, tip: headG, face: fc, hit: [['torso', 0.48]] };
@@ -315,9 +477,9 @@ export class EnemyManager {
   nearestTarget(pos) { let best = null, bd = Infinity; for (const t of this.targets()) { if (!t.alive) continue; const d = t.body.pos.distanceToSquared(pos); if (d < bd) { bd = d; best = t; } } return best; }
   clear() { for (const e of this.enemies) { this._removeLaser(e); if (!e.rootDetached) this.ctx.scene.remove(e.root); } this.enemies.length = 0; this.alive = 0; this.byId.clear(); this.projectiles.clear(); }
   spawn(type, pos, id = null) {
-    const T = TYPES[type]; const ink = T.ink ?? INK.RED;
-    const mat = makeInkMaterial({ ink, shadeScale: 0, shadeBias: 1 });
-    const solid = makeInkMaterial({ ink: T.ink === INK.BLACK ? INK.RED : INK.BLACK, fill: true, side: THREE.DoubleSide });
+    const T = TYPES[type]; const ink = T.ink ?? INK.AMBER;
+    const mat = makeInkMaterial({ ink, fill: true, side: THREE.DoubleSide });
+    const solid = makeInkMaterial({ ink: INK.DARK, fill: true, side: THREE.DoubleSide });
     const model = T.model === 'bomber' ? buildBomber(mat, solid, T) : T.model === 'blob' ? buildBomber(mat, solid, T, true) : T.model === 'flyer' ? buildFlyer(mat, solid, T) : buildHumanoid(mat, solid, T);
     const hw = T.flying ? 0.45 : Math.min(0.33 * T.scale, 0.9);
     const e = { type, T, mat, root: model.root, parts: model.parts, J: model.J, tip: model.tip, face: model.face, hit: model.hit, hp: T.hp, maxHp: T.hp, alive: true, state: 'spawn', t: 0,

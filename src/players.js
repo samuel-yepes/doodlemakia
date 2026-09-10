@@ -24,19 +24,22 @@ export function encodeLocal(P, weaponIndex, extra = {}) {
 
 export class RemotePlayer {
   constructor(ctx, id, name, team, ink) {
-    this.ctx = ctx; this.id = id; this.name = name || 'doodle'; this.team = team; this.ink = ink;
+    this.ctx = ctx; this.id = id; this.name = name || 'doodle'; this.team = team || 'blue';
+    const teamInk = ink != null ? ink : (this.team === 'red' || this.team === 1 ? INK.MAGENTA : INK.CYAN);
+    this.ink = teamInk;
     this.isLocal = false; this.alive = true; this.parryWindow = false; this.idle = false; this.idleSince = 0; this.untouched = false; this.away = false; this.hp = 100; this.maxHp = 100; this.speed = 0; this.weaponIndex = 0;
     this.body = { pos: new THREE.Vector3(0, -50, 0), vel: new THREE.Vector3(), halfW: 0.35, height: 1.75, onGround: true };
     this.center = new THREE.Vector3(); this.eye = new THREE.Vector3(); this.forward = new THREE.Vector3(0, 0, -1); this.right = new THREE.Vector3(1, 0, 0);
     this.yaw = 0; this.pitch = 0; this.crouching = false; this.sliding = false; this.blocking = false; this.aiming = false; this.firing = false;
     this.snapA = null; this.snapB = null; this.phase = 0; this.walk = 0; this.flashT = 0; this.deadT = 0; this.kills = 0; this.deaths = 0; this.score = 0;
-    this.mat = makeInkMaterial({ ink, shadeScale: 0, shadeBias: 1 }); this.solid = makeInkMaterial({ ink: INK.BLACK, fill: true, side: THREE.DoubleSide });
-    this.T = { weapon: 'rifle', scale: 1.0, hat: 'cap', build: { bodyW: 1, headS: 1, limbR: 0.033 }, blockRadius: 0 };
+    this.mat = makeInkMaterial({ ink: teamInk, fill: true, side: THREE.DoubleSide });
+    this.solid = makeInkMaterial({ ink: INK.DARK, fill: true, side: THREE.DoubleSide });
+    this.T = { weapon: 'rifle', scale: 1.0, hat: 'cap', build: { bodyW: 1, headS: 1, limbR: 0.036 }, blockRadius: 0 };
     this.hit = HIT; this.hitSpheres = HIT.map(() => new THREE.Vector3()); this.vel = new THREE.Vector3(); this.grappling = false; this.gPoint = new THREE.Vector3();
     this._buildModel();
     // the grapple rope: a thin line from the hand to wherever the hook is
-    this.rope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1, 5), makeInkMaterial({ ink: INK.BLACK })); this.rope.visible = false; ctx.scene.add(this.rope);
-    this.hook = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), makeInkMaterial({ ink: INK.BLACK, fill: true })); this.hook.visible = false; ctx.scene.add(this.hook);
+    this.rope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1, 5), makeInkMaterial({ ink: INK.DARK })); this.rope.visible = false; ctx.scene.add(this.rope);
+    this.hook = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 5), makeInkMaterial({ ink: teamInk, fill: true })); this.hook.visible = false; ctx.scene.add(this.hook);
   }
   _buildModel() {
     const model = buildHumanoid(this.mat, this.solid, this.T);
@@ -51,10 +54,10 @@ export class RemotePlayer {
   get mesh() { return this.root; }
   setTeam(team, ink = null) {
     this.team = team;
-    const newInk = ink != null ? ink : (team === 'red' || team === 1 ? INK.RED : INK.BLUE);
-    if (this.ink !== newInk) {
+    const newInk = ink != null ? ink : (team === 'red' || team === 1 ? INK.MAGENTA : INK.CYAN);
+    if (this.ink !== newInk || !this.root) {
       this.ink = newInk;
-      this.mat = makeInkMaterial({ ink: newInk, shadeScale: 0, shadeBias: 1 });
+      this.mat = makeInkMaterial({ ink: newInk, fill: true, side: THREE.DoubleSide });
       if (this.root && !this.corpse) {
         this.ctx.scene.remove(this.root);
         const oldW = this.weaponIndex;

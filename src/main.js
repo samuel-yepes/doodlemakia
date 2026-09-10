@@ -169,11 +169,10 @@ function applyOnlineMapRotation(nextKey) {
 ctx.targets = () => [player, ...remote.values()];
 ctx.canHurt = (t) => {
   if (!online() || !t || t === player) return false;
-  if (game.mode === 'tdm') {
-    const myT = player.team || myTeam;
-    const theirT = t.team || 'red';
-    if (myT === theirT) return false;
-  }
+  const myT = player.team || myTeam || 'blue';
+  const theirT = t.team || lobby.players.get(t.id)?.team || scores.get(t.id)?.team;
+  // Teammates can NEVER hurt or kill each other under any circumstance
+  if (myT && theirT && myT === theirT) return false;
   return true;
 };
 ctx.raycastPlayers = (o, d, maxDist) => {
@@ -498,17 +497,21 @@ function onLocalDeath() {
 function respawnLocal() {
   player.team = myTeam;
   player.reset(arenaSpawn()); player.name = myName; player.lastHitBy = null; player.lastHit = null; game.state = 'play'; player.shieldT = 2; hud.tip('Protección de reaparición · 2 s', 1.6);
-  const burstInk = (game.mode === 'tdm' && myTeam === 'red') ? INK.RED : INK.BLUE;
+  const burstInk = (game.mode === 'tdm' && myTeam === 'red') ? INK.MAGENTA : INK.CYAN;
   effects.strokeBurst(player.center, burstInk, 24, 6, { life: 0.5, size: 0.03 }); audio.spawn(player.center);
 }
 function tallyDeath(victim, killer) {
   const v = scores.get(victim); if (v) v.deaths++;
   if (killer && killer !== victim) {
-    const k = scores.get(killer); if (k) k.kills++;
-    if (game.mode === 'tdm') {
-      const killerTeam = (killer === net.id) ? myTeam : (lobby.players.get(killer)?.team || remote.get(killer)?.team || 'blue');
-      if (killerTeam === 'blue' || killerTeam === 'red') {
-        teamKills[killerTeam] = (teamKills[killerTeam] || 0) + 1;
+    const victimTeam = scores.get(victim)?.team || lobby.players.get(victim)?.team || remote.get(victim)?.team || (victim === net.id ? myTeam : null);
+    const killerTeam = (killer === net.id) ? myTeam : (lobby.players.get(killer)?.team || remote.get(killer)?.team || scores.get(killer)?.team);
+    // Disallow friendly fire kills from adding points or team score
+    if (!victimTeam || !killerTeam || victimTeam !== killerTeam) {
+      const k = scores.get(killer); if (k) k.kills++;
+      if (game.mode === 'tdm') {
+        if (killerTeam === 'blue' || killerTeam === 'red') {
+          teamKills[killerTeam] = (teamKills[killerTeam] || 0) + 1;
+        }
       }
     }
   }
@@ -558,11 +561,11 @@ function boardHTML(title) {
     return `<h3>Duelo por Equipos</h3>
       <div class="team-split">
         <div class="team-col blue">
-          <div class="team-name blue">EQUIPO AZUL · ${teamKills.blue}</div>
+          <div class="team-name blue">EQUIPO CIAN · ${teamKills.blue}</div>
           ${bluePlayers.map(({ id, s }) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}${id === net.id ? ' (Tú)' : ''}</span><span>${s.kills}B / ${s.deaths}M</span></div>`).join('')}
         </div>
         <div class="team-col red">
-          <div class="team-name red">EQUIPO ROJO · ${teamKills.red}</div>
+          <div class="team-name red">EQUIPO MAGENTA · ${teamKills.red}</div>
           ${redPlayers.map(({ id, s }) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}${id === net.id ? ' (Tú)' : ''}</span><span>${s.kills}B / ${s.deaths}M</span></div>`).join('')}
         </div>
       </div>
@@ -578,7 +581,7 @@ function checkWin() {
     if (teamKills.blue >= TDM_TARGET) winnerTeam = 'blue';
     else if (teamKills.red >= TDM_TARGET) winnerTeam = 'red';
     if (winnerTeam) {
-      const winner = { isTeam: true, team: winnerTeam, name: winnerTeam === 'blue' ? 'Equipo Azul' : 'Equipo Rojo' };
+      const winner = { isTeam: true, team: winnerTeam, name: winnerTeam === 'blue' ? 'Equipo Cian' : 'Equipo Magenta' };
       net.send('end', winner); endMatch(winner);
     }
     return;
@@ -605,11 +608,11 @@ function addRemote(id, name, team = 'red') {
   if (remote.has(id)) {
     const r = remote.get(id);
     r.name = name;
-    if (team) r.setTeam(team, team === 'blue' ? INK.BLUE : INK.RED);
+    if (team) r.setTeam(team, team === 'blue' ? INK.CYAN : INK.MAGENTA);
     return r;
   }
-  const ink = team === 'blue' ? INK.BLUE : INK.RED;
-  const rp = new RemotePlayer(ctx, id, name, 0, ink);
+  const ink = team === 'blue' ? INK.CYAN : INK.MAGENTA;
+  const rp = new RemotePlayer(ctx, id, name, team, ink);
   rp.setTeam(team, ink);
   rp.onDamage = (t, amount, fromPos) => { if (!ctx.canHurt(t) || !t.alive) return; hud.hitmarker(false, false); net.sendTo(t.id, 'pdmg', { amount: Math.round(amount), from: fromPos ? fromPos.toArray().map((v) => +v.toFixed(1)) : null, by: net.id, src: 'grenade' }); };
   remote.set(id, rp); return rp;
@@ -747,7 +750,13 @@ net.on('lobby', (d) => {
     lobby.players.set(p.id, { name: p.name, team: p.team || 'blue' });
     if (p.id === net.id && p.team) { myTeam = p.team; player.setTeam(myTeam); }
   }
-  for (const p of d.players) if (p.id !== net.id) addRemote(p.id, p.name, p.team || 'red');
+  for (const p of d.players) {
+    if (p.id !== net.id) {
+      const r = remote.get(p.id);
+      if (r) { r.name = p.name; r.setTeam(p.team || 'red'); }
+      else addRemote(p.id, p.name, p.team || 'red');
+    }
+  }
   for (const id of [...remote.keys()]) if (!lobby.players.has(id)) removeRemote(id);
   if (inMatch()) {
     for (const p of d.players) {
@@ -811,7 +820,14 @@ net.on('taken', (d) => { const p = pickups.find((x) => x.id === d.id); if (p) re
 net.on('take', (d) => { if (!net.isHost) return; const p = pickups.find((x) => x.id === d.id); if (p) { removePickup(p); net.send('taken', { id: d.id }); } });
 net.on('ps', (d, from) => { const r = remote.get(from); if (r) { r.push(d, performance.now() / 1000); r.lastSeen = performance.now(); } });
 net.on('pdmg', (d) => {
-  if (!player.alive || game.state !== 'play' || player.shieldT > 0) return; player.lastHitBy = d.by || null; player.lastHit = { from: d.from || null, crit: !!d.crit, amount: d.amount, src: d.src };
+  if (!player.alive || game.state !== 'play' || player.shieldT > 0) return;
+  if (d.by) {
+    const attacker = remote.get(d.by);
+    const attackerTeam = attacker ? (attacker.team || 'blue') : (scores.get(d.by)?.team || lobby.players.get(d.by)?.team || 'blue');
+    const myT = player.team || myTeam || 'blue';
+    if (attackerTeam && myT && attackerTeam === myT) return; // Discard friendly fire packets completely
+  }
+  player.lastHitBy = d.by || null; player.lastHit = { from: d.from || null, crit: !!d.crit, amount: d.amount, src: d.src };
   player.takeDamage(d.amount, d.from ? new THREE.Vector3().fromArray(d.from) : null);
 });
 net.on('pdead', (d, from) => {
@@ -887,7 +903,7 @@ async function createLobby(isPublic) {
   setStatus('Creando sala…');
   try { await net.host({ isPublic }); }
   catch (err) { setStatus(friendlyError(err)); unlockButtons(); return; }
-  lobby.isPublic = isPublic; lobby.map = mapKey; lobby.gameMode = lobby.gameMode || 'ffa'; lobby.players.clear(); lobby.players.set(net.id, { name: myName, team: myTeam }); lobby.hostId = net.id; lobby.status = '';
+  lobby.isPublic = isPublic; lobby.map = mapKey; lobby.gameMode = lobby.gameMode || 'tdm'; lobby.players.clear(); lobby.players.set(net.id, { name: myName, team: myTeam }); lobby.hostId = net.id; lobby.status = '';
   const code = String(net.aliasCode || net.code || '').replace(/-\d+$/, '');
   if (code) history.replaceState(null, '', '?room=' + code);
   game.state = 'lobby'; screen = 'lobby'; showStart();
@@ -920,10 +936,37 @@ function setStatus(t) { lobby.status = t; const el = hud.el.panel.querySelector(
 
 // ---------------- screens ----------------
 function settingsHTML() {
-  return `<div class="settings" id="settings">
-    <label>Sensibilidad del ratón <input type="range" id="setSens" min="25" max="250" step="5" value="${settings.sens}"><b id="setSensV">${settings.sens}%</b></label>
-    <label><input type="checkbox" id="setInv" ${settings.invert ? 'checked' : ''}> Invertir eje vertical</label>
-    <label><input type="checkbox" id="setMus" ${musicWanted ? 'checked' : ''}> Música <span class="k">(M)</span></label>
+  return `<div class="settings-panel" id="settings">
+    <div class="settings-header">
+      <span class="settings-title"><span class="settings-icon">⚙️</span> Configuración del Sistema</span>
+      <span class="settings-badge">PARÁMETROS EN VIVO</span>
+    </div>
+    <div class="settings-grid">
+      <div class="setting-item setting-slider">
+        <div class="setting-label">
+          <span class="setting-icon">🎚️</span>
+          <span>Sensibilidad ratón</span>
+        </div>
+        <div class="slider-track-wrap">
+          <input type="range" class="cyber-range" id="setSens" min="25" max="250" step="5" value="${settings.sens}">
+          <b class="setting-val" id="setSensV">${settings.sens}%</b>
+        </div>
+      </div>
+      <div class="setting-item setting-toggle">
+        <label class="cyber-check-label" for="setInv">
+          <input type="checkbox" class="cyber-check" id="setInv" ${settings.invert ? 'checked' : ''}>
+          <span class="cyber-check-box"></span>
+          <span class="check-text">Invertir eje Y</span>
+        </label>
+      </div>
+      <div class="setting-item setting-toggle">
+        <label class="cyber-check-label" for="setMus">
+          <input type="checkbox" class="cyber-check" id="setMus" ${musicWanted ? 'checked' : ''}>
+          <span class="cyber-check-box"></span>
+          <span class="check-text">Música <kbd class="kbadge-mini">M</kbd></span>
+        </label>
+      </div>
+    </div>
   </div>`;
 }
 function wireSettings() {
@@ -1039,7 +1082,7 @@ function lobbyHTML() {
             const isHost = (p.id === lobby.hostId);
             const isMe = (p.id === net.id);
             const tm = p.team === 'red' ? 'red' : 'blue';
-            const tmName = p.team === 'red' ? 'Equipo Rojo' : 'Equipo Azul';
+            const tmName = p.team === 'red' ? 'Equipo Magenta' : 'Equipo Cian';
             return `
               <div class="room-player-card ${tm}${isMe ? ' me' : ''}${isHost ? ' is-host' : ''}">
                 <div class="rpc-avatar ${tm}">
@@ -1067,14 +1110,14 @@ function lobbyHTML() {
         <input type="text" class="namebox" id="setName" maxlength="14" value="${esc(myName)}">
         <span style="margin-left: 10px;">${isTdm ? 'Tu Equipo:' : 'Tu Color / Equipo:'}</span>
         <div class="teambtns">
-          <button type="button" class="teambtn blue${myTeam === 'blue' ? ' on' : ''}" data-team="blue">Equipo Azul</button>
-          <button type="button" class="teambtn red${myTeam === 'red' ? ' on' : ''}" data-team="red">Equipo Rojo</button>
+          <button type="button" class="teambtn blue${myTeam === 'blue' ? ' on' : ''}" data-team="blue">Equipo Cian</button>
+          <button type="button" class="teambtn red${myTeam === 'red' ? ' on' : ''}" data-team="red">Equipo Magenta</button>
         </div>
       </div>
 
       <div class="modes">
         <button type="button" class="modebtn${!isTdm ? ' on' : ''}" data-mode="ffa" ${host ? '' : 'disabled'}>Todos contra todos<i>FFA · Sin equipos</i></button>
-        <button type="button" class="modebtn${isTdm ? ' on' : ''}" data-mode="tdm" ${host ? '' : 'disabled'}>Duelo por Equipos<i>TDM · Azul vs Rojo</i></button>
+        <button type="button" class="modebtn${isTdm ? ' on' : ''}" data-mode="tdm" ${host ? '' : 'disabled'}>Duelo por Equipos<i>TDM · Cian vs Magenta</i></button>
       </div>
       ${mapHTML(lobby.map || mapKey, host)}
       <div class="hint">${lobby.isPublic ? 'Esta sala es pública: cualquiera puede unirse por partida rápida, código o enlace directo' : 'Sala privada: comparte el código o enlace directo con tus amigos'}</div>
@@ -1166,14 +1209,73 @@ function showStart() {
 }
 function showPause() {
   const curControls = getControlsHTML(input.usingGamepad ? 'pad' : 'kb');
+  const mins = Math.floor(game.time / 60);
+  const secs = Math.floor(game.time % 60);
+  const timeStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   if (online()) {
     const isTdm = (game.mode === 'tdm');
     const title = isTdm ? 'Duelo por Equipos' : 'Todos contra todos';
     const content = isTdm ? boardHTML() : `<div class="scoreboard">${sortedScores().map(([id, s]) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}</span><span>${s.kills} bajas · ${s.deaths} muertes</span></div>`).join('')}</div>`;
-    hud.showScreen(`<h1>Menú</h1><h2>${title} · Sala ${String(net.aliasCode || net.code || '').replace(/-\d+$/, '')}</h2>${content}${curControls}${settingsHTML()}<div class="online" id="online"><div class="row"><button type="button" class="alt" id="leaveBtn">Abandonar partida</button></div></div><div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para reanudar</div>`);
-    wireSettings(); wireControlsTabs(); wireOnline(); return;
+    hud.showScreen(`
+      <div class="pause-modal">
+        <div class="pause-header">
+          <div class="pause-badge"><span class="pulse-dot"></span> // SALA EN LÍNEA · TÁCTICO //</div>
+          <h1 class="pause-title">MENÚ DE SALA</h1>
+          <div class="pause-meta">
+            <div class="pause-chip chip-cyan"><span class="chip-icon">🌐</span><div class="chip-content"><span class="chip-label">MODO</span><span class="chip-val">${title}</span></div></div>
+            <div class="pause-chip chip-code"><span class="chip-icon">🔑</span><div class="chip-content"><span class="chip-label">SALA</span><span class="chip-val">${String(net.aliasCode || net.code || '').replace(/-\d+$/, '')}</span></div></div>
+          </div>
+        </div>
+        ${content}
+        ${curControls}
+        ${settingsHTML()}
+        <div class="pause-actions" id="online">
+          <button type="button" class="pause-btn resume-btn" id="resumeBtn"><span class="btn-icon">▶</span><span class="btn-text">Continuar partida</span></button>
+          <button type="button" class="pause-btn leave-btn" id="leaveBtn"><span class="btn-icon">🚪</span><span class="btn-text">Abandonar sala</span></button>
+        </div>
+        <div class="pause-resume-prompt">
+          <span class="prompt-pulse-icon">◆</span>
+          <span>Pulsa <kbd class="kbadge kbd-primary">${hud.key('confirm')}</kbd> o haz clic para reanudar</span>
+          <span class="prompt-pulse-icon">◆</span>
+        </div>
+      </div>
+    `);
+    wireSettings(); wireControlsTabs(); wireMenuBtn(); wireOnline(); return;
   }
-  hud.showScreen(`<h1>Pausa</h1><h2>Oleada ${game.wave} · Puntos ${game.score}</h2>${curControls}${settingsHTML()}${menuBtnHTML()}<div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para reanudar</div>`);
+  hud.showScreen(`
+    <div class="pause-modal">
+      <div class="pause-header">
+        <div class="pause-badge"><span class="pulse-dot"></span> // SISTEMA EN PAUSA · CONTROL TÁCTICO //</div>
+        <h1 class="pause-title">PAUSA</h1>
+        <div class="pause-meta">
+          <div class="pause-chip chip-wave">
+            <span class="chip-icon">🌊</span>
+            <div class="chip-content"><span class="chip-label">OLEADA</span><span class="chip-val">${game.wave}</span></div>
+          </div>
+          <div class="pause-chip chip-score">
+            <span class="chip-icon">💎</span>
+            <div class="chip-content"><span class="chip-label">PUNTOS</span><span class="chip-val">${game.score.toLocaleString()}</span></div>
+          </div>
+          <div class="pause-chip chip-kills">
+            <span class="chip-icon">💀</span>
+            <div class="chip-content"><span class="chip-label">BAJAS</span><span class="chip-val">${game.kills}</span></div>
+          </div>
+          <div class="pause-chip chip-time">
+            <span class="chip-icon">⏱️</span>
+            <div class="chip-content"><span class="chip-label">TIEMPO</span><span class="chip-val">${timeStr}</span></div>
+          </div>
+        </div>
+      </div>
+      ${curControls}
+      ${settingsHTML()}
+      ${menuBtnHTML()}
+      <div class="pause-resume-prompt">
+        <span class="prompt-pulse-icon">◆</span>
+        <span>Pulsa <kbd class="kbadge kbd-primary">${hud.key('confirm')}</kbd> o haz clic en cualquier lugar para reanudar</span>
+        <span class="prompt-pulse-icon">◆</span>
+      </div>
+    </div>
+  `);
   wireSettings(); wireControlsTabs(); wireMenuBtn();
 }
 function showClickToPlay() { hud.showScreen(`<h1>Partida iniciada</h1><h2>${game.mode === 'tdm' ? 'Duelo por Equipos · Primero a ' + TDM_TARGET + ' bajas' : 'Todos contra todos · Primero a ' + FFA_TARGET + ' bajas'}</h2><div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para entrar al combate</div>`); }
@@ -1182,8 +1284,29 @@ function showDead() {
   hud.showScreen(`<h1>Borrado</h1><div class="stats">Sobreviviste a <b>${game.wave}</b> oleadas · <b>${game.kills}</b> bajas · Puntos <b>${game.score}</b>${nb ? ' · <b>¡Nuevo récord!</b>' : ` · Récord ${best}`}</div>${checkpointHTML()}${menuBtnHTML()}<div class="go">Haz clic (o pulsa ${hud.key('confirm')}) para volver a dibujar</div>`);
   wireCheckpoints((w) => beginAtWave(w)); wireMenuBtn();
 }
-function menuBtnHTML() { return '<div class="online menubtn"><div class="row"><button type="button" class="alt" id="menuBtn">Menú principal</button></div></div>'; }
-function wireMenuBtn() { const b = hud.el.panel.querySelector('#menuBtn'); if (b) b.addEventListener('click', (e) => { e.stopPropagation(); toMainMenu(); }); }
+function menuBtnHTML() {
+  return `<div class="pause-actions">
+    <button type="button" class="pause-btn resume-btn" id="resumeBtn">
+      <span class="btn-icon">▶</span>
+      <span class="btn-text">Reanudar partida</span>
+    </button>
+    <button type="button" class="pause-btn menu-btn" id="menuBtn">
+      <span class="btn-icon">⏏</span>
+      <span class="btn-text">Menú principal</span>
+    </button>
+  </div>`;
+}
+function wireMenuBtn() {
+  const m = hud.el.panel.querySelector('#menuBtn');
+  if (m) m.addEventListener('click', (e) => { e.stopPropagation(); toMainMenu(); });
+  const r = hud.el.panel.querySelector('#resumeBtn');
+  if (r) r.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!input.usingGamepad) input.requestLock();
+    hud.hideScreen();
+    game.menu = false;
+  });
+}
 function toMainMenu() {
   mapRotationTimer = MAP_ROTATION_INTERVAL; mapWarn15 = false; mapWarn5 = false;
   history.replaceState(null, '', window.location.pathname); game.state = 'start'; game.mode = 'solo'; game.menu = false; setArena(false); resetGame(); audio.reelLoop(false); input.exitLock(); hud.setGameplayVisible(false); screen = 'main'; showStart();
@@ -1265,7 +1388,7 @@ function startMatch(late, spawnIdx, mode = lobby.gameMode || 'ffa') {
   player.reset(spawnIdx != null && spots[spawnIdx] ? spots[spawnIdx].clone() : arenaSpawn()); beginCommon(); game.state = 'play'; screen = 'lobby'; player.shieldT = 2;
   refreshScoreHud();
   if (game.mode === 'tdm') {
-    hud.message('Duelo por Equipos', 'Equipo ' + (myTeam === 'blue' ? 'Azul' : 'Rojo') + ' · Objetivo: ' + TDM_TARGET + ' bajas', 3.5);
+    hud.message('Duelo por Equipos', 'Equipo ' + (myTeam === 'blue' ? 'Cian' : 'Magenta') + ' · Objetivo: ' + TDM_TARGET + ' bajas', 3.5);
   } else {
     hud.message('Todos contra todos', late ? 'Te uniste a una partida en curso' : 'Primero a ' + FFA_TARGET + ' bajas · ' + Math.round(FFA_TIME / 60) + ' minutos · Todos son enemigos', 3);
   }

@@ -13,11 +13,22 @@ function cyl(r, h, x, y, z, mat, parent, axis = 'z', seg = 8) { const g = new TH
 function sph(r, x, y, z, mat, parent, seg = 8) { const m = new THREE.Mesh(new THREE.SphereGeometry(r, seg, seg), mat); m.position.set(x, y, z); parent.add(m); return m; }
 function star(n = 7, r1 = 0.16, r2 = 0.06) { const s = new THREE.Shape(); for (let i = 0; i < n * 2; i++) { const a = (i / (n * 2)) * TAU, r = i % 2 === 0 ? r1 : r2; if (i === 0) s.moveTo(Math.cos(a) * r, Math.sin(a) * r); else s.lineTo(Math.cos(a) * r, Math.sin(a) * r); } s.closePath(); return new THREE.ShapeGeometry(s); }
 function frame(w, h, t, d, x, y, z, mat, parent) { const g = new THREE.Group(); g.position.set(x, y, z); parent.add(g); bx(w, t, d, 0, h / 2, 0, mat, g); bx(w, t, d, 0, -h / 2, 0, mat, g); bx(t, h, d, -w / 2, 0, 0, mat, g); bx(t, h, d, w / 2, 0, 0, mat, g); return g; }
-// doodle fist + forearm heading back toward the shoulder
+// cyber glove + forearm with luminous conduit strip
 function hand(mat, x, y, z, parent, dir = [0.4, -0.5, 1], len = 0.42) {
-  sph(0.062, x, y, z, mat, parent); const d = new THREE.Vector3(...dir).normalize();
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, len, 7), mat); arm.position.set(x + d.x * len / 2, y + d.y * len / 2, z + d.z * len / 2);
-  arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d); parent.add(arm); return arm;
+  const gloveMat = makeInkMaterial({ ink: INK.DARK, fill: true });
+  sph(0.062, x, y, z, gloveMat, parent);
+  const d = new THREE.Vector3(...dir).normalize();
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, len, 7), gloveMat);
+  arm.position.set(x + d.x * len / 2, y + d.y * len / 2, z + d.z * len / 2);
+  arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d);
+  parent.add(arm);
+  // glowing neon conduit strip along forearm
+  const conduitMat = mat || makeInkMaterial({ ink: INK.CYAN, fill: true });
+  const conduit = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, len * 0.88, 5), conduitMat);
+  conduit.position.set(x + d.x * len / 2, y + d.y * len / 2 + 0.038, z + d.z * len / 2);
+  conduit.quaternion.copy(arm.quaternion);
+  parent.add(conduit);
+  return arm;
 }
 function makeFlash(parent, x, y, z, scale) {
   const fm = makeInkMaterial({ ink: INK.ORANGE, fill: true, side: THREE.DoubleSide }); const g = new THREE.Group();
@@ -79,7 +90,11 @@ export class Gun extends ViewModel {
   constructor(ctx, type) {
     super(ctx); Object.assign(this, GUNS[type]); this.isGun = true; this.mag = this.magSize;
     this.fireT = 0; this.reloading = false; this.reloadT = 0; this.spreadCur = this.spread; this.flashT = 0; this.pumpT = 0; this.racked = false; this.needPump = false;
-    this.mat = makeInkMaterial({ ink: INK.BLUE }); this.dark = makeInkMaterial({ ink: INK.BLACK }); this.red = makeInkMaterial({ ink: INK.RED, fill: true });
+    this.mat = makeInkMaterial({ ink: INK.CYAN });
+    this.dark = makeInkMaterial({ ink: INK.DARK, fill: true });
+    this.cyan = makeInkMaterial({ ink: INK.CYAN, fill: true });
+    this.magenta = makeInkMaterial({ ink: INK.MAGENTA, fill: true });
+    this.red = makeInkMaterial({ ink: INK.MAGENTA, fill: true });
     this.build(); this.setSight(...this.sight);
   }
   get spreadPx() { return 5 + this.spreadCur * 900; }
@@ -182,15 +197,36 @@ export class Gun extends ViewModel {
 export class Rifle extends Gun {
   constructor(ctx) { super(ctx, 'rifle'); }
   build() {
-    const g = this.root, mat = this.mat, dark = this.dark;
-    bx(0.09, 0.12, 0.5, 0, 0, 0, mat, g); bx(0.075, 0.085, 0.36, 0, 0, -0.42, mat, g);
+    const g = this.root, dark = this.dark, cyan = this.cyan, mag = this.magenta;
+    // Dark metallic carbon chassis
+    bx(0.09, 0.12, 0.5, 0, 0, 0, dark, g);
+    bx(0.075, 0.085, 0.36, 0, 0, -0.42, dark, g);
     cyl(0.018, 0.42, 0, 0.02, -0.75, dark, g);
-    this.magMesh = bx(0.06, 0.2, 0.1, 0, -0.16, -0.06, mat, g); this.magMesh.rotation.x = 0.15; this.magY = -0.16;
-    bx(0.07, 0.11, 0.3, 0, -0.01, 0.4, mat, g); const grip = bx(0.05, 0.14, 0.06, 0, -0.13, 0.12, mat, g); grip.rotation.x = 0.3;
-    // the sight: a single small floating dot, nothing else in the picture
-    frame(0.075, 0.07, 0.012, 0.03, 0, 0.12, -0.05, mat, g); bx(0.03, 0.018, 0.05, 0, 0.062, -0.05, dark, g);
-    sph(0.0012, 0, 0.12, -0.05, this.red, g, 5);
-    hand(mat, 0.02, -0.15, 0.13, g, [0.5, -0.6, 1]); this.handL = hand(mat, -0.05, -0.08, -0.4, g, [-0.35, -0.9, 0.9]); this.handLPos = this.handL.position.clone();
+    this.magMesh = bx(0.06, 0.2, 0.1, 0, -0.16, -0.06, dark, g);
+    this.magMesh.rotation.x = 0.15; this.magY = -0.16;
+    bx(0.07, 0.11, 0.3, 0, -0.01, 0.4, dark, g);
+    const grip = bx(0.05, 0.14, 0.06, 0, -0.13, 0.12, dark, g); grip.rotation.x = 0.3;
+
+    // Glowing luminous strips & energy conduits (as in target screenshot)
+    // 1. Lower cyan neon tube running along underside of barrel
+    cyl(0.012, 0.54, 0, -0.025, -0.66, cyan, g);
+    // 2. Lateral cyan chassis strips
+    bx(0.095, 0.012, 0.46, 0, 0.015, 0, cyan, g);
+    // 3. Glowing magenta/purple chamber capacitor
+    bx(0.048, 0.024, 0.14, 0, 0.038, -0.1, mag, g);
+    // 4. Magazine glowing base strip
+    bx(0.064, 0.018, 0.095, 0, -0.26, -0.05, cyan, g);
+
+    // Compact Holographic Sight: glowing cyan housing frame + floating reticle
+    frame(0.062, 0.062, 0.008, 0.018, 0, 0.12, -0.05, cyan, g);
+    bx(0.032, 0.016, 0.045, 0, 0.062, -0.05, dark, g);
+    sph(0.0025, 0, 0.12, -0.05, mag, g, 6);
+    bx(0.032, 0.002, 0.001, 0, 0.12, -0.05, cyan, g);
+    bx(0.002, 0.032, 0.001, 0, 0.12, -0.05, cyan, g);
+
+    hand(cyan, 0.02, -0.15, 0.13, g, [0.5, -0.6, 1]);
+    this.handL = hand(cyan, -0.05, -0.08, -0.4, g, [-0.35, -0.9, 0.9]);
+    this.handLPos = this.handL.position.clone();
     this.muzzle = new THREE.Object3D(); this.muzzle.position.set(0, 0.02, -0.98); g.add(this.muzzle);
     this.ejectPt = new THREE.Object3D(); this.ejectPt.position.set(0.06, 0.02, 0.02); g.add(this.ejectPt);
     this.flash = makeFlash(g, 0, 0.02, -0.98, 1);

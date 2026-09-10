@@ -18,7 +18,7 @@ export class HUD {
       <div class="dmg-ind" id="dmg"></div>
       <div class="hud-tl"><div class="score">Puntos <b id="score">0</b></div><div class="combo" id="combo"></div></div>
       <div class="hud-tr"><div class="wave">Oleada <b id="wave">1</b></div><div class="modifier" id="modifier"></div><div class="left"><b id="left">0</b> enemigos restantes</div><div class="timer" id="timer"></div><div class="pvpscore" id="pvpscore" hidden></div></div><div class="board" id="board" hidden></div>
-      <div class="tdm-header" id="tdmHeader" hidden><span class="team-blue">Equipo Azul: <b id="blueKills">0</b></span> <span class="divider">|</span> <span class="team-red">Equipo Rojo: <b id="redKills">0</b></span><div class="tdm-target" id="tdmTarget">Primero a 30 bajas</div></div>
+      <div class="tdm-header" id="tdmHeader" hidden><span class="team-blue">CIAN: <b id="blueKills">0</b></span> <span class="divider">|</span> <span class="team-red">MAGENTA: <b id="redKills">0</b></span><div class="tdm-target" id="tdmTarget">Primero a 30 bajas</div></div>
       <div class="net-status" id="netStatus" hidden><span id="netStatusText"></span></div>
       <div class="bossbar" id="bossbar"><div class="bossname" id="bossname"></div><div class="bar big"><div class="fill red" id="bossfill"></div></div></div>
       <div class="hud-bl">
@@ -26,6 +26,7 @@ export class HUD {
         <div class="ammo"><b id="mag">30</b><span id="reserve">/120</span><span class="reloading" id="reloading"></span><span class="nades" id="nades" title="Granadas"></span></div>
         <div class="tally" id="tally"></div>
       </div>
+      <div class="hud-center-tip" id="centerTip">Mantén Q para recoger cable · Pulsa en balanceo para soltarte</div>
       <div class="hud-br"><div class="slots" id="slots"></div><div class="weapon" id="weapon">Fusil</div><div class="hint" id="hint"></div></div>
       <div class="tip" id="tip"></div>
       <div class="message"><div class="msg-main" id="msg"></div><div class="msg-sub" id="msgsub"></div></div>
@@ -71,7 +72,7 @@ export class HUD {
   setKatana() { this.el.mag.textContent = '∞'; this.el.reserve.textContent = ''; this.el.reloading.textContent = ''; if (this._lastTally !== -1) { this.el.tally.innerHTML = ''; this._lastTally = -1; } }
   setSlots(slots) {
     const key = slots.map((s) => `${s.name}|${s.active ? 1 : 0}|${s.ammo}`).join(';'); if (key === this._lastSlots) return; this._lastSlots = key;
-    this.el.slots.innerHTML = slots.map((s, i) => `<div class="slot${s.active ? ' active' : ''}${s.empty ? ' empty' : ''}"><span class="num">${i + 1}</span>${s.name}<span class="sammo">${s.ammo}</span></div>`).join('');
+    this.el.slots.innerHTML = slots.map((s, i) => `<div class="slot${s.active ? ' active' : ''}${s.empty ? ' empty' : ''}"><span class="num">[${i + 1}]</span> <span>${s.name}</span> <span class="sammo">${s.ammo}</span></div>`).join('');
   }
   setHealth(hp, max) { const f = Math.max(0, hp / max); this.el.hpfill.style.width = (f * 100).toFixed(1) + '%'; this.el.hpnum.textContent = Math.ceil(hp); this.root.classList.toggle('low', f < 0.3); }
   setPvpScore(html) { const on = !!html; this.el.pvpscore.hidden = !on; if (on) this.el.pvpscore.innerHTML = html; this.el.wave.parentElement.hidden = on; this.el.left.parentElement.hidden = on; }
@@ -212,13 +213,22 @@ export function getControlsHTML(activeMode = 'kb') {
   return `
 <div class="ctrl-box">
   <div class="ctrl-tabs" id="ctrlTabs">
-    <button type="button" class="ctrl-tab ${!isPad ? 'active' : ''}" data-tab="kb">⌨️ Teclado y Ratón</button>
-    <button type="button" class="ctrl-tab ${isPad ? 'active' : ''}" data-tab="pad">🎮 Mando (PS5 / Xbox)</button>
+    <button type="button" class="ctrl-tab ${!isPad ? 'active' : ''}" data-tab="kb">
+      <span class="tab-icon">⌨️</span>
+      <span class="tab-text">Teclado y Ratón</span>
+    </button>
+    <button type="button" class="ctrl-tab ${isPad ? 'active' : ''}" data-tab="pad">
+      <span class="tab-icon">🎮</span>
+      <span class="tab-text">Mando (PS5 / Xbox)</span>
+    </button>
   </div>
   <div class="ctrl-pane ${!isPad ? 'active' : ''}" id="ctrlPaneKb">
     <div class="ctrl-grid">
-      <div class="ctrl-card">
-        <div class="ctrl-card-title">🏃 Movimiento & Agilidad</div>
+      <div class="ctrl-card ctrl-move">
+        <div class="ctrl-card-title">
+          <span class="ctrl-title-left"><span class="ctrl-icon">🏃</span> Movimiento & Agilidad</span>
+          <span class="ctrl-tag">NAV-01</span>
+        </div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">WASD</kbd></span><span class="kact">Moverse</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">Shift</kbd></span><span class="kact">Esprintar</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Espacio</kbd></span><span class="kact">Salto / Salto pared</span></div>
@@ -226,29 +236,38 @@ export function getControlsHTML(activeMode = 'kb') {
         <div class="krow"><span class="kgroup"><kbd class="kbadge">C</kbd><span class="ksep">/</span><kbd class="kbadge">Ctrl</kbd></span><span class="kact">Deslizarse / Dash</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Q</kbd><span class="ksep">/</span><kbd class="kbadge kbd-primary">E</kbd></span><span class="kact">Gancho elástico</span></div>
       </div>
-      <div class="ctrl-card">
-        <div class="ctrl-card-title">⚔️ Combate & Tácticas</div>
-        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Clic Izq</kbd></span><span class="kact">Disparar / Tajo</span></div>
+      <div class="ctrl-card ctrl-combat">
+        <div class="ctrl-card-title">
+          <span class="ctrl-title-left"><span class="ctrl-icon">⚔️</span> Combate & Tácticas</span>
+          <span class="ctrl-tag">TAC-02</span>
+        </div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Clic Izq</kbd></span><span class="kact">Disparar / Tajo Katana</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">Clic Der</kbd></span><span class="kact">Apuntar / Bloqueo</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">R</kbd></span><span class="kact">Recargar arma</span></div>
-        <div class="krow"><span class="kgroup"><kbd class="kbadge">F</kbd></span><span class="kact">Tajo rápido de espada</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">F</kbd></span><span class="kact">Tajo rápido espada</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">G</kbd></span><span class="kact">Granada (mantén)</span></div>
-        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Clic Izq+Der</kbd></span><span class="kact">Corte Focus (100%)</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-focus">Clic Izq+Der</kbd></span><span class="kact">Corte Focus (100%)</span></div>
       </div>
-      <div class="ctrl-card">
-        <div class="ctrl-card-title">🎒 Arsenal & Extras</div>
+      <div class="ctrl-card ctrl-arsenal">
+        <div class="ctrl-card-title">
+          <span class="ctrl-title-left"><span class="ctrl-icon">🎒</span> Arsenal & Entorno</span>
+          <span class="ctrl-tag">ARS-03</span>
+        </div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">1 - 7</kbd><span class="ksep">/</span><kbd class="kbadge">Rueda</kbd></span><span class="kact">Cambiar arma</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">Tab</kbd></span><span class="kact">Marcador (en línea)</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">M</kbd></span><span class="kact">Música on/off</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">Esc</kbd></span><span class="kact">Menú / Pausa</span></div>
-        <div class="krow"><span class="kgroup"><span class="kbadge kbadge-soft">Trampolines</span></span><span class="kact">Gran impulso</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-trampoline">⚡ Resortes</kbd></span><span class="kact">Súper impulso</span></div>
       </div>
     </div>
   </div>
   <div class="ctrl-pane ${isPad ? 'active' : ''}" id="ctrlPanePad">
     <div class="ctrl-grid">
-      <div class="ctrl-card">
-        <div class="ctrl-card-title">🏃 Movimiento & Agilidad</div>
+      <div class="ctrl-card ctrl-move">
+        <div class="ctrl-card-title">
+          <span class="ctrl-title-left"><span class="ctrl-icon">🏃</span> Movimiento & Agilidad</span>
+          <span class="ctrl-tag">NAV-01</span>
+        </div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Stick Izq</kbd></span><span class="kact">Moverse</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">L3</kbd></span><span class="kact">Esprintar</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">✕ / A</kbd></span><span class="kact">Salto / Salto pared</span></div>
@@ -256,22 +275,28 @@ export function getControlsHTML(activeMode = 'kb') {
         <div class="krow"><span class="kgroup"><kbd class="kbadge">○ / B</kbd></span><span class="kact">Deslizarse / Dash</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">L1 / LB</kbd></span><span class="kact">Gancho elástico</span></div>
       </div>
-      <div class="ctrl-card">
-        <div class="ctrl-card-title">⚔️ Combate & Tácticas</div>
+      <div class="ctrl-card ctrl-combat">
+        <div class="ctrl-card-title">
+          <span class="ctrl-title-left"><span class="ctrl-icon">⚔️</span> Combate & Tácticas</span>
+          <span class="ctrl-tag">TAC-02</span>
+        </div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">Stick Der</kbd></span><span class="kact">Mirar / Apuntar</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">R2 / RT</kbd></span><span class="kact">Disparar / Tajo</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">L2 / LT</kbd></span><span class="kact">Apuntar / Bloqueo</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">□ / X</kbd></span><span class="kact">Recargar arma</span></div>
-        <div class="krow"><span class="kgroup"><kbd class="kbadge">R1 / RB</kbd></span><span class="kact">Tajo rápido de espada</span></div>
-        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">L2 + R2</kbd></span><span class="kact">Embestida corte</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge">R1 / RB</kbd></span><span class="kact">Tajo rápido espada</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-focus">L2 + R2</kbd></span><span class="kact">Embestida Focus</span></div>
       </div>
-      <div class="ctrl-card">
-        <div class="ctrl-card-title">🎒 Arsenal & Extras</div>
+      <div class="ctrl-card ctrl-arsenal">
+        <div class="ctrl-card-title">
+          <span class="ctrl-title-left"><span class="ctrl-icon">🎒</span> Arsenal & Entorno</span>
+          <span class="ctrl-tag">ARS-03</span>
+        </div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-primary">△ / Y</kbd></span><span class="kact">Siguiente arma</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">R3 / D-pad ↑</kbd></span><span class="kact">Granada (mantén)</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">Create / View</kbd></span><span class="kact">Marcador (en línea)</span></div>
         <div class="krow"><span class="kgroup"><kbd class="kbadge">Options / Menu</kbd></span><span class="kact">Menú / Pausa</span></div>
-        <div class="krow"><span class="kgroup"><span class="kbadge kbadge-soft">Trampolines</span></span><span class="kact">Gran impulso</span></div>
+        <div class="krow"><span class="kgroup"><kbd class="kbadge kbd-trampoline">⚡ Resortes</kbd></span><span class="kact">Súper impulso</span></div>
       </div>
     </div>
   </div>
