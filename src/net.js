@@ -24,7 +24,7 @@ export function normalizeRoomCode(raw) {
   return c;
 }
 
-// Public reliable STUN servers (Google + Cloudflare) for NAT traversal across Vercel, corporate LAN & mobile
+// Public reliable STUN + TURNS servers for corporate firewalls, Symmetric NAT & mobile
 const PEER_OPTS = {
   debug: 0,
   config: {
@@ -34,14 +34,26 @@ const PEER_OPTS = {
       { urls: 'stun:stun2.l.google.com:19302' },
       { urls: 'stun:stun3.l.google.com:19302' },
       { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:stun.cloudflare.com:3478' }
+      { urls: 'stun:stun.cloudflare.com:3478' },
+      // TURNS over TLS port 443 with valid SSL certificate (*.relay.metered.ca)
+      // Relays traffic when UDP is blocked by corporate firewalls or Symmetric NAT
+      {
+        urls: [
+          'turns:standard.relay.metered.ca:443?transport=tcp',
+          'turns:standard.relay.metered.ca:5349?transport=tcp',
+          'turn:standard.relay.metered.ca:80?transport=tcp',
+          'turn:standard.relay.metered.ca:443?transport=tcp'
+        ],
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
     ],
     iceCandidatePoolSize: 10
   }
 };
 
-// Strict controlled timeouts (maximum 8 seconds per requirements)
-const JOIN_TIMEOUT = 8000, QUICK_TIMEOUT = 8000, SIGNAL_TIMEOUT = 8000;
+// Generous timeouts for corporate firewall traversal and NAT discovery
+const JOIN_TIMEOUT = 15000, QUICK_TIMEOUT = 12000, SIGNAL_TIMEOUT = 12000;
 
 function peerAvailable() { return typeof window !== 'undefined' && typeof window.Peer === 'function'; }
 const idFromError = (err) => { const m = /peer\s+(\S+)/.exec(String(err && err.message || '')); return m ? m[1] : null; };
@@ -221,7 +233,7 @@ export class Net {
 
   // someone knocking: a quick-play probe is told how full we are and only seated once it says it is staying
   _incoming(conn) {
-    conn.on('open', () => {
+    const handleOpen = () => {
       if (!this.accepting || this.conns.size >= this.maxPlayers - 1) {
         conn.send({
           t: 'refused',
@@ -261,7 +273,12 @@ export class Net {
         conn.send({ t: 'welcome', d: welcome, from: this.id });
         seat();
       }
-    });
+    };
+    if (conn.open) {
+      handleOpen();
+    } else {
+      conn.on('open', handleOpen);
+    }
   }
 
   async join(rawCode, meta = {}, onStatus = null) {
