@@ -923,11 +923,12 @@ async function quickPlay() {
   await createLobby(true);
 }
 function friendlyError(err) {
-  const m = String(err && err.message || err || ''); if (!m) return 'Ocurrió un problema';
+  const m = String(err && err.message || err || ''); if (!m) return 'Ocurrió un problema al conectar';
+  if (/rate limit|1015|429/i.test(m)) return 'La red externa está saturada o limitada por Cloudflare. Usa el servidor local para jugar sin restricciones.';
   if (/networking library/.test(m)) return 'No se pudo cargar la librería de red · Revisa tu conexión y recarga';
-  if (/timed out|signalling/.test(m)) return 'No se pudo conectar al servidor de emparejamiento · Revisa tu conexión';
+  if (/timed out|signalling/.test(m)) return 'No se pudo conectar al servidor de señalización · La red de tu trabajo o firewall podría restringir WebSockets externos';
   if (/no lobby with that code/.test(m)) return 'No se encontró ninguna sala con ese código · Confirma el código con tu amigo';
-  if (/no answer/.test(m)) return 'Sala encontrada pero no responde · Alguien podría tener una red que bloquea conexiones directas';
+  if (/no answer/.test(m)) return 'Sala encontrada pero no responde · La red de alguno de los jugadores bloquea conexiones directas';
   if (/full/.test(m)) return 'Esta sala está llena · Prueba con otro código';
   if (/leave the lobby/.test(m)) return 'Debes salir de la sala actual primero';
   return m;

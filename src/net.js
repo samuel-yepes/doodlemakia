@@ -7,28 +7,24 @@
 // every slot at once - a directory with no directory server. A connection only counts once the
 // host has answered with a welcome, so a full or closed lobby can be skipped for the next one.
 
-// a local dev server gets its own namespace so testing can never wander into a live lobby
-const LOCAL = typeof location !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-const PREFIX = LOCAL ? 'doodledev-' : 'doodledistrict-';
+const PREFIX = 'doodledistrict-';
 const PUBLIC_SLOTS = 16;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export const makeCode = () => Array.from({ length: 5 }, () => ALPHABET[Math.floor(Math.random() * ALPHABET.length)]).join('');
 
-// Public reliable STUN servers (Google + Cloudflare) for NAT traversal across Vercel & mobile
-const PEER_OPTS = {
-  debug: 0,
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:stun.cloudflare.com:3478' },
-      { urls: 'stun:openrelay.metered.ca:80' }
-    ],
-    iceCandidatePoolSize: 10
-  }
+// Public reliable STUN + TURN servers for corporate firewall & Symmetric NAT traversal
+const ICE_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    { urls: 'stun:openrelay.metered.ca:80' },
+    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+  ],
+  iceCandidatePoolSize: 10
 };
 
 // Strict controlled timeouts (maximum 8 seconds per requirements)
@@ -36,6 +32,42 @@ const JOIN_TIMEOUT = 8000, QUICK_TIMEOUT = 8000, SIGNAL_TIMEOUT = 8000;
 
 function peerAvailable() { return typeof window !== 'undefined' && typeof window.Peer === 'function'; }
 const idFromError = (err) => { const m = /peer\s+(\S+)/.exec(String(err && err.message || '')); return m ? m[1] : null; };
+
+let _resolvedBroker = null;
+async function getBrokerConfig(forceCheck = false) {
+  if (_resolvedBroker && !forceCheck) return _resolvedBroker;
+  // 1. Probe local/LAN signaling server on current origin (instant, anti-firewall, no 429 rate limit)
+  if (typeof location !== 'undefined' && location.hostname) {
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 1200);
+      const res = await fetch('/peerjs/id', { signal: ctrl.signal });
+      clearTimeout(t);
+      if (res.ok) {
+        const port = location.port ? parseInt(location.port, 10) : (location.protocol === 'https:' ? 443 : 80);
+        _resolvedBroker = {
+          host: location.hostname,
+          port,
+          path: '/peerjs',
+          secure: location.protocol === 'https:',
+          debug: 0,
+          config: ICE_CONFIG
+        };
+        console.log('[Net] Servidor de señalización local/LAN activo en:', `${location.hostname}:${port}/peerjs`);
+        return _resolvedBroker;
+      }
+    } catch (e) {
+      // Local broker not available
+    }
+  }
+
+  // 2. Cloud broker fallback (0.peerjs.com)
+  _resolvedBroker = {
+    debug: 0,
+    config: ICE_CONFIG
+  };
+  return _resolvedBroker;
+}
 
 export class Net {
   constructor() {
@@ -55,13 +87,37 @@ export class Net {
     if (this.onStateChange) this.onStateChange(state);
   }
 
-  _newPeer(id) {
+  async _newPeer(id) {
+    if (!peerAvailable()) throw new Error('networking library did not load');
+    const opts = await getBrokerConfig();
     return new Promise((resolve, reject) => {
-      if (!peerAvailable()) return reject(new Error('networking library did not load'));
-      const peer = new window.Peer(id, PEER_OPTS); let settled = false;
-      const timer = setTimeout(() => { if (!settled) { settled = true; peer.destroy(); reject(new Error('signalling server timed out')); } }, SIGNAL_TIMEOUT);
-      peer.on('open', () => { if (settled) return; settled = true; clearTimeout(timer); resolve(peer); });
-      peer.on('error', (err) => { if (settled) return; settled = true; clearTimeout(timer); peer.destroy(); reject(err); });
+      let peer;
+      try {
+        peer = new window.Peer(id, opts);
+      } catch (err) {
+        return reject(err);
+      }
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          try { peer.destroy(); } catch (e) {}
+          reject(new Error('signalling server timed out'));
+        }
+      }, SIGNAL_TIMEOUT);
+      peer.on('open', () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(peer);
+      });
+      peer.on('error', (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { peer.destroy(); } catch (e) {}
+        reject(err);
+      });
     });
   }
 
@@ -145,17 +201,35 @@ export class Net {
   // ---- lobby creation / joining ----
   async host({ isPublic = false, code = null } = {}) {
     this.leave(); this.isHost = true; this.isPublic = isPublic;
-    this._setState('Buscando anfitrión…');
-    if (code) { this.code = String(code).toUpperCase(); this.peer = await this._newPeer(PREFIX + this.code); }
-    else if (isPublic) {
+    this._setState('Iniciando sala…');
+    if (code) {
+      this.code = String(code).toUpperCase();
+      this.peer = await this._newPeer(PREFIX + this.code);
+    } else if (isPublic) {
       for (let slot = 0; slot < PUBLIC_SLOTS; slot++) {
-        try { this.peer = await this._newPeer(PREFIX + 'PUB' + slot); this.code = 'PUB' + slot; break; } catch (e) { if (!(e && e.type === 'unavailable-id')) throw e; }
+        try {
+          this.peer = await this._newPeer(PREFIX + 'PUB' + slot);
+          this.code = 'PUB' + slot;
+          break;
+        } catch (e) {
+          if (!(e && e.type === 'unavailable-id')) {
+            // continue probe
+          }
+        }
       }
-      if (!this.peer) throw new Error('all public lobbies are busy - host a private one');
-    } else {
-      for (let tries = 0; tries < 3 && !this.peer; tries++) {
+      // If all public slots are busy, seamlessly generate a room code so user is never blocked
+      if (!this.peer) {
         this.code = makeCode();
-        try { this.peer = await this._newPeer(PREFIX + this.code); } catch (e) { if (!(e && e.type === 'unavailable-id') || tries === 2) throw e; }
+        this.peer = await this._newPeer(PREFIX + this.code);
+      }
+    } else {
+      for (let tries = 0; tries < 5 && !this.peer; tries++) {
+        this.code = makeCode();
+        try {
+          this.peer = await this._newPeer(PREFIX + this.code);
+        } catch (e) {
+          if (!(e && e.type === 'unavailable-id') || tries === 4) throw e;
+        }
       }
     }
     this.id = this.peer.id; this.hostId = this.id; this.connected = true; this.accepting = true;
