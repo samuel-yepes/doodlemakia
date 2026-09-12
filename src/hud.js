@@ -169,14 +169,23 @@ export class HUD {
         this._nameTags.set(rp.id, el);
       }
 
-      el.className = `nametag team-red${hit ? ' occluded' : ''}`;
+      const colHex = (rp.color && rp.color.hex) || '#ff007f';
+      el.className = `nametag${hit ? ' occluded' : ''}`;
+      el.style.borderColor = colHex;
+      el.style.color = colHex;
+      el.style.boxShadow = `0 0 12px ${colHex}66`;
 
       const nameEl = el.querySelector('.nt-name');
       if (nameEl && nameEl.textContent !== rp.name) nameEl.textContent = rp.name || 'Garabato';
 
-      const hpFrac = clamp((rp.hp || 0) / (rp.maxHp || 100), 0, 1);
+      const hpFrac = clamp((rp.hp != null ? rp.hp : 100) / (rp.maxHp || 100), 0, 1);
       const fillEl = el.querySelector('.nt-fill');
-      if (fillEl) fillEl.style.width = (hpFrac * 100).toFixed(0) + '%';
+      if (fillEl) {
+        fillEl.style.width = (hpFrac * 100).toFixed(0) + '%';
+        fillEl.style.background = colHex;
+      }
+      const barEl = el.querySelector('.nt-bar');
+      if (barEl) barEl.style.borderColor = colHex;
 
       const scale = clamp(1.0 - (dist - 10) * 0.01, 0.68, 1.15);
       const opacity = hit ? 0.35 : clamp(1.0 - (dist - 55) / 30, 0.3, 1.0);

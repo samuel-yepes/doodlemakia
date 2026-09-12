@@ -1,7 +1,7 @@
 // First-person player: movement (sprint/slide/wall-jump/mantle/air dash), swing-grapple, camera feel, health, weapons.
 import * as THREE from 'three';
 import { makeBody, SEE_THROUGH } from './physics.js';
-import { makeInkMaterial, INK } from './render.js';
+import { makeInkMaterial, setInk, INK } from './render.js';
 import { Rifle, Shotgun, Sniper, Revolver, Smg, Launcher, Katana } from './weapons.js';
 // the dome shell and anything else flagged this way cannot be hooked
 const NO_GRAPPLE = (b) => !!b.data.noGrapple;
@@ -17,7 +17,7 @@ export class Player {
   constructor(ctx) {
     this.ctx = ctx; this.camera = ctx.camera; this.camera.rotation.order = 'YXZ';
     this.body = makeBody(ctx.level.playerStart, 0.35, STAND_H, 0.55);
-    this.yaw = 0; this.pitch = 0; this.maxHp = 120; this.hp = 120; this.alive = true; this.regenDelay = 4.5; this.regenRate = 11; this.nadeCharge = 0; this._nadeHeld = false; this.grapStam = 1; this.blockHeld = 0; this.stamPause = 0;
+    this.yaw = 0; this.pitch = 0; this.maxHp = 100; this.hp = 100; this.alive = true; this.regenDelay = 4.5; this.regenRate = 11; this.nadeCharge = 0; this._nadeHeld = false; this.grapStam = 1; this.blockHeld = 0; this.stamPause = 0;
     this.eye = new THREE.Vector3(); this.center = new THREE.Vector3(); this.forward = new THREE.Vector3(0, 0, -1); this.right = new THREE.Vector3(1, 0, 0);
     this.speed = 0; this.hurtFx = 0; this.flashFx = 0; this.lastDamageT = 10;
     this.rig = new THREE.Group(); this.camera.add(this.rig); ctx.scene.add(this.camera);
@@ -37,11 +37,14 @@ export class Player {
     this.hookMesh.add(new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.05, 6, 10), hm)); const hb = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08), hm); hb.position.y = -0.2; this.hookMesh.add(hb);
     this.hookMesh.visible = false; ctx.scene.add(this.hookMesh);
   }
-  setTeam(team) {
+  setTeam(team, ink = null) {
     this.team = team;
-    const ink = (team === 'red' || team === 1) ? INK.MAGENTA : INK.CYAN;
+    const teamInk = ink != null ? ink : ((team === 'red' || team === 1) ? INK.MAGENTA : INK.CYAN);
     for (const w of this.weapons) {
-      if (w && w.setTeamInk) w.setTeamInk(ink);
+      if (w && w.setTeamInk) w.setTeamInk(teamInk);
+    }
+    if (this.hookMesh) {
+      this.hookMesh.traverse((o) => { if (o.material) setInk(o.material, teamInk); });
     }
   }
   reset(pos) {

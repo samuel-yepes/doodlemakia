@@ -10,12 +10,15 @@ export const INK = {
   AMBER: 3,
   GREEN: 4,
   WHITE: 5,
+  PURPLE: 6,
+  LIME: 7,
+  ORANGE: 8,
+  PINK: 9,
   // Backward compatibility aliases
   BLUE: 0,
   RED: 1,
   BLACK: 2,
-  ORANGE: 3,
-  PINK: 1,
+  YELLOW: 7,
 };
 
 export const INK_COLORS = [
@@ -25,6 +28,22 @@ export const INK_COLORS = [
   new THREE.Vector3(1.00, 0.67, 0.00), // 3: neon amber (#ffaa00)
   new THREE.Vector3(0.00, 1.00, 0.40), // 4: neon emerald green (#00ff66)
   new THREE.Vector3(0.90, 0.98, 1.00), // 5: bright white plasma (#e6fcff)
+  new THREE.Vector3(0.68, 0.28, 1.00), // 6: neon purple (#ad47ff)
+  new THREE.Vector3(0.85, 1.00, 0.00), // 7: electric lime (#d9ff00)
+  new THREE.Vector3(1.00, 0.33, 0.00), // 8: blaze orange (#ff5500)
+  new THREE.Vector3(1.00, 0.15, 0.62), // 9: hot pink (#ff269e)
+];
+
+export const PLAYER_COLORS = [
+  { ink: 0, hex: '#00f0ff', name: 'Cian' },
+  { ink: 1, hex: '#ff007f', name: 'Magenta' },
+  { ink: 3, hex: '#ffaa00', name: 'Ámbar' },
+  { ink: 4, hex: '#00ff66', name: 'Verde' },
+  { ink: 6, hex: '#ad47ff', name: 'Púrpura' },
+  { ink: 7, hex: '#d9ff00', name: 'Lima' },
+  { ink: 8, hex: '#ff5500', name: 'Naranja' },
+  { ink: 9, hex: '#ff269e', name: 'Rosa' },
+  { ink: 5, hex: '#e6fcff', name: 'Plasma' },
 ];
 
 export const LIGHT_WORLD = new THREE.Vector3(0.38, 0.82, 0.42).normalize();
@@ -104,15 +123,23 @@ uniform float uHurt;
 uniform float uFlash;
 uniform float uSlow;
 uniform float uLowHp;
-uniform vec3 uInks[6];
+uniform vec3 uInks[10];
 uniform mat4 uInvProj;
 uniform mat4 uInvView;
 
 float linDepth(float z) { float zn = z * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - zn * (uFar - uNear)); }
 vec3 inkColor(float id) {
   int i = int(id + 0.5);
-  if (i <= 0) return uInks[0]; if (i == 1) return uInks[1]; if (i == 2) return uInks[2];
-  if (i == 3) return uInks[3]; if (i == 4) return uInks[4]; return uInks[5];
+  if (i <= 0) return uInks[0];
+  if (i == 1) return uInks[1];
+  if (i == 2) return uInks[2];
+  if (i == 3) return uInks[3];
+  if (i == 4) return uInks[4];
+  if (i == 5) return uInks[5];
+  if (i == 6) return uInks[6];
+  if (i == 7) return uInks[7];
+  if (i == 8) return uInks[8];
+  return uInks[9];
 }
 
 float gridPulse(vec2 p, float spacing, float width) {

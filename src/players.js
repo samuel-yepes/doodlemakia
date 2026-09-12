@@ -24,8 +24,8 @@ export function encodeLocal(P, weaponIndex, extra = {}) {
 
 export class RemotePlayer {
   constructor(ctx, id, name, team, ink) {
-    this.ctx = ctx; this.id = id; this.name = name || 'doodle'; this.team = team || 'blue';
-    const teamInk = ink != null ? ink : (this.team === 'red' || this.team === 1 ? INK.MAGENTA : INK.CYAN);
+    this.ctx = ctx; this.id = id; this.name = name || 'doodle'; this.team = team || 'ffa';
+    const teamInk = ink != null ? ink : INK.MAGENTA;
     this.ink = teamInk;
     this.isLocal = false; this.alive = true; this.parryWindow = false; this.idle = false; this.idleSince = 0; this.untouched = false; this.away = false; this.hp = 100; this.maxHp = 100; this.speed = 0; this.weaponIndex = 0;
     this.body = { pos: new THREE.Vector3(0, -50, 0), vel: new THREE.Vector3(), halfW: 0.35, height: 1.75, onGround: true };
@@ -54,7 +54,7 @@ export class RemotePlayer {
   get mesh() { return this.root; }
   setTeam(team, ink = null) {
     this.team = team;
-    const newInk = ink != null ? ink : (team === 'red' || team === 1 ? INK.MAGENTA : INK.CYAN);
+    const newInk = ink != null ? ink : this.ink;
     if (this.ink !== newInk || !this.root) {
       this.ink = newInk;
       this.mat = makeInkMaterial({ ink: newInk, fill: true, side: THREE.DoubleSide });
@@ -100,7 +100,19 @@ export class RemotePlayer {
     this.snapB = { p: new THREE.Vector3(snap[0], snap[1], snap[2]), yaw: snap[3], pitch: snap[4], t };
     this.setWeapon(snap[5]); const f = snap[6];
     this.crouching = !!(f & 1); this.sliding = !!(f & 2); this.blocking = !!(f & 4); this.aiming = !!(f & 8); this.body.onGround = !!(f & 16); this.firing = !!(f & 32);
-    const wasAlive = this.alive; this.alive = !!(f & 64); this.hp = snap[7];
+    const wasAlive = this.alive;
+    const snapAlive = !!(f & 64);
+    const snapHp = snap[7];
+    if (!wasAlive && snapAlive) {
+      this.alive = true;
+      this.hp = snapHp;
+    } else if (this.alive) {
+      this.alive = snapAlive;
+      this.hp = Math.min(this.hp != null ? this.hp : snapHp, snapHp);
+    } else {
+      this.alive = snapAlive;
+      this.hp = snapHp;
+    }
     if (snap.length > 10) this.vel.set(snap[8], snap[9], snap[10]); else this.vel.set(0, 0, 0);
     this.grappling = !!(f & 128) && snap.length > 13; if (this.grappling) this.gPoint.set(snap[11], snap[12], snap[13]); this.parryWindow = !!(f & 256); const idle = !!(f & 512); if (idle && !this.idle) this.idleSince = t; this.idle = idle; this.untouched = !!(f & 1024); this.away = !!(f & 2048);
     if (wasAlive && !this.alive) this.deadT = 0;

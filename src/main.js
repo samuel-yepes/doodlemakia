@@ -2,7 +2,7 @@
 // Online play is peer-to-peer: one player's browser hosts the lobby and keeps score, every
 // player runs their own body, and each one tells the others what it did.
 import * as THREE from 'three';
-import { InkRenderer, INK, makeInkMaterial } from './render.js';
+import { InkRenderer, INK, makeInkMaterial, PLAYER_COLORS } from './render.js';
 import { World } from './physics.js';
 import { Input } from './input.js';
 import { buildLevel, LEVELS } from './level.js';
@@ -80,6 +80,31 @@ const lobby = { players: new Map(), hostId: null, isPublic: true, status: '', co
 const scores = new Map();      // peer id -> { name, kills, deaths }
 let screen = 'main';           // which start-screen panel is showing: main | online | lobby
 window.__game = { ctx, game, player, enemies, nav, world, level, hud, effects, input, net, remote, lobby, scores };
+
+function getPlayerColor(id) {
+  let idx = 0;
+  if (lobby.order && lobby.order.includes(id)) {
+    idx = lobby.order.indexOf(id);
+  } else {
+    const rows = lobbyRows();
+    const found = rows.findIndex((p) => p.id === id);
+    if (found !== -1) idx = found;
+    else {
+      let h = 0;
+      for (let i = 0; i < (id || '').length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+      idx = h;
+    }
+  }
+  return PLAYER_COLORS[Math.abs(idx) % PLAYER_COLORS.length];
+}
+
+function refreshPlayerColors() {
+  for (const [id, r] of remote) {
+    const col = getPlayerColor(id);
+    r.color = col;
+    r.setTeam(col.name, col.ink);
+  }
+}
 
 function getNextRotatedMapKey() {
   const key = LEVELS[mapRotationIndex % LEVELS.length].key;
@@ -190,6 +215,35 @@ ctx.raycastPlayers = (o, d, maxDist) => {
 };
 const _bc = new THREE.Vector3();
 ctx.playersInArc = (pos, dir, range, cosHalf) => { const out = []; for (const t of remote.values()) { if (!t.alive || !ctx.canHurt(t)) continue; _v.subVectors(t.center, pos); const d = _v.length(); if (d > range + 0.3) continue; if (d > 0.3 && _v.normalize().dot(dir) < cosHalf) continue; if (!world.hasLineOfSight(pos, t.center)) continue; out.push(t); } return out; };
+const HOW = { rifle: 'Fusil', shotgun: 'Escopeta', sniper: 'Francotirador', smg: 'Subfusil', revolver: 'Revólver', launcher: 'Lanzagranadas', katana: 'Espada de Energía', grenade: 'Granada', deflect: 'su propia bala' };
+function howWord(src) { return HOW[src] || null; }
+
+function killRemotePlayer(t, info = {}) {
+  if (!t || !t.alive) return;
+  t.alive = false;
+  t.hp = 0;
+  const dir = info.dir ? info.dir.clone() : (info.from ? player.center.clone().sub(info.from).normalize() : player.forward.clone());
+  const isOver = !!(info.crit || (info.amount && info.amount >= 90) || info.source === 'katana');
+  t.ragdoll(dir, isOver);
+  audio.enemyDie(t.center);
+  audio.kill(true);
+  game.kills++;
+  const how = info.source ? howWord(info.source) : null;
+  const detail = how ? ' · ' + how + (info.crit ? ' Tiro a la cabeza' : '') : (info.crit ? ' · Tiro a la cabeza' : '');
+  game.addScore(100, 'Borrado a ' + (t.name || 'Garabato') + detail);
+  hud.kill('Borrado a ' + (t.name || 'Garabato') + detail, 100);
+
+  net.broadcast('pdead', {
+    killer: net.id,
+    victim: t.id,
+    dir: dir.toArray().map((v) => +v.toFixed(2)),
+    over: isOver,
+    crit: !!info.crit,
+    how
+  });
+  if (net.isHost) tallyDeath(t.id, net.id);
+}
+
 ctx.hitPlayer = (t, dmg, info) => {
   if (!ctx.canHurt(t) || !t.alive) return;
   // a raised katana facing you parries a slash outright and turns some bullets aside
@@ -208,8 +262,33 @@ ctx.hitPlayer = (t, dmg, info) => {
   const frontHit = /^(head|torso|arm|fore)/.test(info.part || '');
   // a slash is only parried by a guard that just came up and faces you
   if (facing > 0.6 && frontHit && info.source === 'katana' && t.parryWindow) { effects.strokeBurst(info.point, INK.ORANGE, 10, 6, { life: 0.25, size: 0.04 }); audio.shieldHit(t.center); game.hitstop(0.08, 0.15); player.weapons[player.katanaIndex].cooldown = Math.max(player.weapons[player.katanaIndex].cooldown, 0.6); input.rumble(0.6, 0.3, 90); hud.tip('¡Bloqueado!', 0.9); return; }
-  effects.blood(info.point, info.dir, clamp(0.4 + dmg / 80, 0.4, 1.6), { ink: INK.RED }); hud.hitmarker(false, info.crit); audio.hitEnemy(t.center); t.flash();
-  net.sendTo(t.id, 'pdmg', { amount: Math.round(dmg), from: player.center.toArray().map((v) => +v.toFixed(1)), by: net.id, crit: !!info.crit, src: info.source });
+  
+  const damageVal = Math.round(dmg);
+  effects.blood(info.point, info.dir, clamp(0.4 + damageVal / 80, 0.4, 1.6), { ink: INK.RED });
+  hud.hitmarker(false, info.crit);
+  audio.hitEnemy(t.center);
+  t.flash();
+
+  // Deduce vida inmediatamente en local para que la barra de salud baje al instante
+  t.hp = Math.max(0, (t.hp != null ? t.hp : 100) - damageVal);
+
+  net.sendTo(t.id, 'pdmg', {
+    amount: damageVal,
+    from: player.center.toArray().map((v) => +v.toFixed(1)),
+    by: net.id,
+    crit: !!info.crit,
+    src: info.source
+  });
+
+  // Si la vida llega a 0, confirmar baja de inmediato
+  if (t.hp <= 0 && t.alive) {
+    killRemotePlayer(t, {
+      crit: info.crit,
+      amount: damageVal,
+      source: info.source,
+      dir: info.dir ? info.dir.clone() : player.forward.clone()
+    });
+  }
 };
 // a slash through another player's rope cuts it: their client drops the hook
 const _rp = new THREE.Vector3(), _rq = new THREE.Vector3();
@@ -456,8 +535,6 @@ function updateFocus(dt) {
 }
 
 // ---------------- free for all: spawning, death, scoring ----------------
-const HOW = { rifle: 'Fusil', shotgun: 'Escopeta', sniper: 'Francotirador', smg: 'Subfusil', revolver: 'Revólver', launcher: 'Lanzagranadas', katana: 'Espada de Energía', grenade: 'Granada', deflect: 'su propia bala' };
-const howWord = (src) => HOW[src] || null;
 const spawnSpots = () => (level.arenaSpawns && level.arenaSpawns.length ? level.arenaSpawns : level.spawns);
 function arenaSpawn() {
   const spots = spawnSpots();
@@ -477,7 +554,7 @@ function onLocalDeath() {
   const killer = player.lastHitBy || null; const h = player.lastHit || {};
   const dir = h.from ? player.center.clone().sub(new THREE.Vector3().fromArray(h.from)).normalize().toArray().map((v) => +v.toFixed(2)) : null;
   const how = killer ? howWord(h.src) : null;
-  net.broadcast('pdead', { killer, dir, over: !!(h.crit || h.amount >= 90 || h.src === 'katana'), how, crit: !!h.crit });
+  net.broadcast('pdead', { killer, victim: net.id, dir, over: !!(h.crit || h.amount >= 90 || h.src === 'katana'), how, crit: !!h.crit });
   if (net.isHost) tallyDeath(net.id, killer);
   game.respawnT = RESPAWN; game.state = 'dying'; game.deathT = 0;
   const kn = killer && scores.get(killer) ? scores.get(killer).name : null;
@@ -536,13 +613,31 @@ function endMatch(winner) {
 
 // ---------------- networking ----------------
 function addRemote(id, name) {
+  const color = getPlayerColor(id);
   if (remote.has(id)) {
     const r = remote.get(id);
     r.name = name;
+    r.color = color;
+    r.setTeam(color.name, color.ink);
     return r;
   }
-  const rp = new RemotePlayer(ctx, id, name, 'red', INK.MAGENTA);
-  rp.onDamage = (t, amount, fromPos) => { if (!ctx.canHurt(t) || !t.alive) return; hud.hitmarker(false, false); net.sendTo(t.id, 'pdmg', { amount: Math.round(amount), from: fromPos ? fromPos.toArray().map((v) => +v.toFixed(1)) : null, by: net.id, src: 'grenade' }); };
+  const rp = new RemotePlayer(ctx, id, name, color.name, color.ink);
+  rp.color = color;
+  rp.onDamage = (t, amount, fromPos) => {
+    if (!ctx.canHurt(t) || !t.alive) return;
+    hud.hitmarker(false, false);
+    const dmg = Math.round(amount);
+    t.hp = Math.max(0, (t.hp != null ? t.hp : 100) - dmg);
+    net.sendTo(t.id, 'pdmg', {
+      amount: dmg,
+      from: fromPos ? fromPos.toArray().map((v) => +v.toFixed(1)) : null,
+      by: net.id,
+      src: 'grenade'
+    });
+    if (t.hp <= 0 && t.alive) {
+      killRemotePlayer(t, { source: 'grenade', from: fromPos, amount: dmg });
+    }
+  };
   remote.set(id, rp); return rp;
 }
 function removeRemote(id) { const r = remote.get(id); if (r) { r.dispose(); remote.delete(id); } lobby.players.delete(id); scores.delete(id); }
@@ -573,9 +668,14 @@ net.onAdopt = (hostId, welcome) => {
   }
   lobby.players.set(net.id, { name: myName });
   net.send('join_info', { name: myName });
+  refreshPlayerColors();
   renderLobby();
 };
-function broadcastLobby() { net.send('lobby', { players: lobbyRows(), hostId: net.id, isPublic: lobby.isPublic, map: lobby.map || mapKey, gameMode: 'ffa', shown: net.aliasCode || net.code }); renderLobby(); }
+function broadcastLobby() {
+  refreshPlayerColors();
+  net.send('lobby', { players: lobbyRows(), hostId: net.id, isPublic: lobby.isPublic, map: lobby.map || mapKey, gameMode: 'ffa', shown: net.aliasCode || net.code });
+  renderLobby();
+}
 const inMatch = () => ['play', 'dying', 'over'].includes(game.state);
 net.onPeerLeave = (id) => {
   const nm = (lobby.players.get(id) || {}).name;
@@ -666,12 +766,14 @@ net.on('lobby', (d) => {
   }
   for (const p of d.players) {
     if (p.id !== net.id) {
+      const color = getPlayerColor(p.id);
       const r = remote.get(p.id);
-      if (r) { r.name = p.name; }
+      if (r) { r.name = p.name; r.color = color; r.setTeam(color.name, color.ink); }
       else addRemote(p.id, p.name);
     }
   }
   for (const id of [...remote.keys()]) if (!lobby.players.has(id)) removeRemote(id);
+  refreshPlayerColors();
   if (inMatch()) {
     for (const p of d.players) {
       if (!scores.has(p.id)) scores.set(p.id, { name: p.name, kills: 0, deaths: 0 });
@@ -725,17 +827,33 @@ net.on('taken', (d) => { const p = pickups.find((x) => x.id === d.id); if (p) re
 net.on('take', (d) => { if (!net.isHost) return; const p = pickups.find((x) => x.id === d.id); if (p) { removePickup(p); net.send('taken', { id: d.id }); } });
 net.on('ps', (d, from) => { const r = remote.get(from); if (r) { r.push(d, performance.now() / 1000); r.lastSeen = performance.now(); } });
 net.on('pdmg', (d) => {
-  if (!player.alive || game.state !== 'play' || player.shieldT > 0) return;
+  if (!player.alive) return;
   player.lastHitBy = d.by || null; player.lastHit = { from: d.from || null, crit: !!d.crit, amount: d.amount, src: d.src };
   player.takeDamage(d.amount, d.from ? new THREE.Vector3().fromArray(d.from) : null);
 });
 net.on('pdead', (d, from) => {
-  const r = remote.get(from); const vn = r ? r.name : 'Alguien'; const kn = d.killer && scores.get(d.killer) ? scores.get(d.killer).name : null;
-  if (r) { r.ragdoll(d.dir ? new THREE.Vector3().fromArray(d.dir) : null, !!d.over); audio.enemyDie(r.center); }
+  const victimId = d.victim || from;
+  if (victimId === net.id) {
+    if (player.alive) {
+      player.lastHitBy = d.killer || null;
+      player.die();
+    }
+    return;
+  }
+  const r = remote.get(victimId);
+  const vn = r ? r.name : ((lobby.players.get(victimId) || {}).name || 'Alguien');
+  const kn = d.killer && scores.get(d.killer) ? scores.get(d.killer).name : (d.killer === net.id ? myName : null);
+  if (r && r.alive) {
+    r.alive = false;
+    r.hp = 0;
+    r.ragdoll(d.dir ? new THREE.Vector3().fromArray(d.dir) : null, !!d.over);
+    audio.enemyDie(r.center);
+  }
   const how = d.how ? ' · ' + d.how + (d.crit ? ' Tiro a la cabeza' : '') : '';
-  if (d.killer === net.id) { game.kills++; game.addScore(100, 'Borrado a ' + vn + how); audio.kill(true); }
-  else hud.kill(kn ? kn + ' borró a ' + vn + how : vn + ' cayó del papel', 0);
-  if (net.isHost) tallyDeath(from, d.killer);
+  if (d.killer !== net.id) {
+    hud.kill(kn ? kn + ' borró a ' + vn + how : vn + ' cayó del papel', 0);
+  }
+  if (net.isHost) tallyDeath(victimId, d.killer);
 });
 net.on('nade', (d) => player.throwGrenade(d));
 net.on('brk', (d) => { const br = level.breakables[d.id]; if (br) breakProp(br, null, false); });
@@ -744,7 +862,7 @@ net.on('shots', (d, from) => {
   const r = remote.get(from); if (!r || !r.root || !r.alive) return;
   _sm.set(r.body.pos.x + r.right.x * 0.3 + r.forward.x * 0.8, r.body.pos.y + 1.35 + r.forward.y * 0.8, r.body.pos.z + r.right.z * 0.3 + r.forward.z * 0.8);
   const th = TRACER_THICK[d.k] || 0.02; const e = d.e || [];
-  const tracerInk = (r.ink === INK.RED || r.ink === INK.MAGENTA) ? INK.RED : INK.BLUE;
+  const tracerInk = (r.ink != null) ? r.ink : INK.CYAN;
   for (let i = 0; i + 2 < e.length; i += 3) { _se.set(e[i], e[i + 1], e[i + 2]); effects.tracer(_sm, _se, tracerInk, th, 0.06); }
   r.flash(); audio.remoteShot(d.k, _sm);
 });
@@ -982,14 +1100,16 @@ function lobbyHTML() {
           ${rows.map((p) => {
             const isHost = (p.id === lobby.hostId);
             const isMe = (p.id === net.id);
+            const col = getPlayerColor(p.id);
             return `
-              <div class="room-player-card${isMe ? ' me' : ''}${isHost ? ' is-host' : ''}">
-                <div class="rpc-avatar">
+              <div class="room-player-card${isMe ? ' me' : ''}${isHost ? ' is-host' : ''}" style="border-left: 4px solid ${col.hex}; box-shadow: 0 0 12px ${col.hex}33;">
+                <div class="rpc-avatar" style="border-color: ${col.hex}; color: ${col.hex}; text-shadow: 0 0 8px ${col.hex};">
                   <span class="rpc-icon">${isHost ? '👑' : '✏️'}</span>
                 </div>
                 <div class="rpc-info">
                   <div class="rpc-name-row">
                     <span class="rpc-name">${esc(p.name)}</span>
+                    <span class="rpc-color-pill" style="color: ${col.hex}; border: 1px solid ${col.hex}; background: ${col.hex}22;">● ${col.name}</span>
                     ${isMe ? '<span class="rpc-tag me-tag">Tú</span>' : ''}
                     ${isHost ? '<span class="rpc-tag host-tag">Anfitrión</span>' : ''}
                   </div>
@@ -1204,7 +1324,7 @@ function resetGame() {
   mapRotationTimer = MAP_ROTATION_INTERVAL; mapWarn15 = false; mapWarn5 = false;
   if (level.breakables.some((b) => !b.alive)) setLevel(loadedKey, arenaLoaded, true);
   enemies.clear(); effects.clear(); for (const p of pickups) R.scene.remove(p.mesh); pickups.length = 0; pickupClock = 0;
-  player.maxHp = online() ? 110 : 120; player.regenDelay = online() ? 4 : 4.5; player.regenRate = online() ? 14 : 11;
+  player.maxHp = online() ? 100 : 120; player.regenDelay = online() ? 4 : 4.5; player.regenRate = online() ? 14 : 11;
   player.reset(level.playerStart); player.name = myName; player.lastHitBy = null; player.lastHit = null; enemies.mods.speed = 1; enemies.mods.damage = 1; hud.setModifier(''); hud.setBoss(null, null); game.boss = null; endFocus(); game.katanaStreak = 0;
   game.score = 0; game.kills = 0; game.combo = 0; game.wave = 0; game.intermission = 0; game.queue = []; game.time = 0; game.over = null; game.matchT = 0; hud.setScore(0, 0); hud.setTimer(''); hud.setPvpScore(null); hud.setTdmScore(false, 0, 0, 0); hud.setWave(1, 0); hud.setBoard(null);
 }
@@ -1258,7 +1378,11 @@ function startMatch(late, spawnIdx, mode = 'ffa') {
   }
   if (!scores.size) for (const [id, p] of lobby.players) scores.set(id, { name: p.name, kills: 0, deaths: 0 });
   const spots = spawnSpots();
-  player.reset(spawnIdx != null && spots[spawnIdx] ? spots[spawnIdx].clone() : arenaSpawn()); beginCommon(); game.state = 'play'; screen = 'lobby'; player.shieldT = 2;
+  player.reset(spawnIdx != null && spots[spawnIdx] ? spots[spawnIdx].clone() : arenaSpawn());
+  const myColor = getPlayerColor(net.id);
+  player.setTeam(myColor.name, myColor.ink);
+  refreshPlayerColors();
+  beginCommon(); game.state = 'play'; screen = 'lobby'; player.shieldT = 2;
   refreshScoreHud();
   hud.message('Todos contra todos', late ? 'Te uniste a una partida en curso' : 'Primero a ' + FFA_TARGET + ' bajas · ' + Math.round(FFA_TIME / 60) + ' minutos · Todos son enemigos', 3);
   hud.tip(`Mantén pulsado <b>${hud.key('score')}</b> para ver el marcador`, 5);
@@ -1374,12 +1498,10 @@ function step(now) {
       game.deathT += dt;
       if (online()) {
         const before = Math.ceil(game.respawnT); game.respawnT -= dt; const left = Math.ceil(game.respawnT);
-        if (left > 0) { if (left !== before || game.deathT <= dt) hud.message(String(left), 'Reapareciendo pronto', 1.1); }
-        else if (before > 0) { game.respawnArm = input.lastActive; game.promptT = 0; }
-        else if (!game.menu) {
-          // waiting on a press: any key, button or click brings you back; pause opens the menu instead
-          game.promptT -= dt; if (game.promptT <= 0) { game.promptT = 1.4; hud.message('Listo', `Pulsa ${hud.key('confirm')} · Cualquier botón o clic para reaparecer`, 1.5); }
-          if (input.lastActive !== game.respawnArm && !input.pressed('pause') && !input.down('pause')) respawnLocal();
+        if (left > 0) {
+          if (left !== before || game.deathT <= dt) hud.message(String(left), 'Reapareciendo pronto', 1.1);
+        } else {
+          respawnLocal();
         }
       }
       else if (game.deathT > 1.7) { game.state = 'dead'; showDead(); input.exitLock(); }
