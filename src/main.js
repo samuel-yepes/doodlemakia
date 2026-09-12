@@ -52,9 +52,7 @@ function applySettings() {
   localStorage.setItem('doodle_sens', String(settings.sens)); localStorage.setItem('doodle_invert', settings.invert ? '1' : '0');
 }
 // ---------------- game state & map rotation ----------------
-const FFA_TARGET = 20, TDM_TARGET = 30, FFA_TIME = 600, RESPAWN = 2.5;
-const teamKills = { blue: 0, red: 0 };
-let myTeam = 'blue';
+const FFA_TARGET = 20, FFA_TIME = 600, RESPAWN = 2.5;
 let matchLeft = FFA_TIME, clockT = 0, clockRunning = false;
 let mapRotationIndex = Number(localStorage.getItem('doodle_rot_idx') || 0);
 let userExplicitlyPickedMap = false;
@@ -71,18 +69,17 @@ const game = ctx.game = {
   addScore(pts, label) { const mult = 1 + Math.min(this.combo, 9) * 0.25; const p = Math.round(pts * mult); this.score += p; if (label) hud.kill(label, p); hud.setScore(this.score, this.combo); },
   onPlayerDeath() { endFocus(); onLocalDeath(); },
 };
-const online = () => game.mode === 'ffa' || game.mode === 'tdm';
+const online = () => game.mode === 'ffa';
 const enemies = ctx.enemies = new EnemyManager(ctx);
 const player = ctx.player = new Player(ctx);
 player.name = myName;
-player.team = myTeam;
 const net = new Net();
 net.onStateChange = (st) => { hud.setNetState(st); setStatus(st); };
 const remote = new Map();      // peer id -> RemotePlayer
 const lobby = { players: new Map(), hostId: null, isPublic: true, status: '', code: '', map: null, gameMode: 'ffa' };
-const scores = new Map();      // peer id -> { name, kills, deaths, team }
+const scores = new Map();      // peer id -> { name, kills, deaths }
 let screen = 'main';           // which start-screen panel is showing: main | online | lobby
-window.__game = { ctx, game, player, enemies, nav, world, level, hud, effects, input, net, remote, lobby, scores, teamKills };
+window.__game = { ctx, game, player, enemies, nav, world, level, hud, effects, input, net, remote, lobby, scores };
 
 function getNextRotatedMapKey() {
   const key = LEVELS[mapRotationIndex % LEVELS.length].key;
@@ -169,10 +166,6 @@ function applyOnlineMapRotation(nextKey) {
 ctx.targets = () => [player, ...remote.values()];
 ctx.canHurt = (t) => {
   if (!online() || !t || t === player) return false;
-  const myT = player.team || myTeam || 'blue';
-  const theirT = t.team || lobby.players.get(t.id)?.team || scores.get(t.id)?.team;
-  // Teammates can NEVER hurt or kill each other under any circumstance
-  if (myT && theirT && myT === theirT) return false;
   return true;
 };
 ctx.raycastPlayers = (o, d, maxDist) => {
@@ -467,11 +460,7 @@ const HOW = { rifle: 'Fusil', shotgun: 'Escopeta', sniper: 'Francotirador', smg:
 const howWord = (src) => HOW[src] || null;
 const spawnSpots = () => (level.arenaSpawns && level.arenaSpawns.length ? level.arenaSpawns : level.spawns);
 function arenaSpawn() {
-  const t = player.team || myTeam;
-  let spots = spawnSpots();
-  if (game.mode === 'tdm' && level.teamSpawns && level.teamSpawns[t] && level.teamSpawns[t].length) {
-    spots = level.teamSpawns[t];
-  }
+  const spots = spawnSpots();
   const others = [...remote.values()].filter((r) => r.alive && r.root && r.root.visible);
   const scored = spots.map((s) => ({ s, d: others.reduce((a, r) => Math.min(a, r.body.pos.distanceTo(s)), 999) }));
   scored.sort((a, b) => b.d - a.d);
@@ -495,125 +484,64 @@ function onLocalDeath() {
   hud.kill(kn ? 'Borrado por ' + kn + (how ? ' · ' + how + (h.crit ? ' Tiro a la cabeza' : '') : '') : 'Borrado', 0);
 }
 function respawnLocal() {
-  player.team = myTeam;
   player.reset(arenaSpawn()); player.name = myName; player.lastHitBy = null; player.lastHit = null; game.state = 'play'; player.shieldT = 2; hud.tip('Protección de reaparición · 2 s', 1.6);
-  const burstInk = (game.mode === 'tdm' && myTeam === 'red') ? INK.MAGENTA : INK.CYAN;
-  effects.strokeBurst(player.center, burstInk, 24, 6, { life: 0.5, size: 0.03 }); audio.spawn(player.center);
+  effects.strokeBurst(player.center, INK.CYAN, 24, 6, { life: 0.5, size: 0.03 }); audio.spawn(player.center);
 }
 function tallyDeath(victim, killer) {
   const v = scores.get(victim); if (v) v.deaths++;
   if (killer && killer !== victim) {
-    const victimTeam = scores.get(victim)?.team || lobby.players.get(victim)?.team || remote.get(victim)?.team || (victim === net.id ? myTeam : null);
-    const killerTeam = (killer === net.id) ? myTeam : (lobby.players.get(killer)?.team || remote.get(killer)?.team || scores.get(killer)?.team);
-    // Disallow friendly fire kills from adding points or team score
-    if (!victimTeam || !killerTeam || victimTeam !== killerTeam) {
-      const k = scores.get(killer); if (k) k.kills++;
-      if (game.mode === 'tdm') {
-        if (killerTeam === 'blue' || killerTeam === 'red') {
-          teamKills[killerTeam] = (teamKills[killerTeam] || 0) + 1;
-        }
-      }
-    }
+    const k = scores.get(killer); if (k) k.kills++;
   }
   sendScores(); checkWin();
 }
 function sendScores() {
   const rows = [...scores.entries()].map(([id, s]) => ({ id, ...s }));
-  net.send('score', { rows, teamKills, mode: game.mode });
-  applyScores({ rows, teamKills, mode: game.mode });
+  net.send('score', { rows, mode: 'ffa' });
+  applyScores({ rows, mode: 'ffa' });
 }
 function applyScores(data) {
   const rows = Array.isArray(data) ? data : (data && data.rows ? data.rows : []);
-  if (data && data.teamKills) {
-    teamKills.blue = data.teamKills.blue || 0;
-    teamKills.red = data.teamKills.red || 0;
-  }
   if (data && data.mode) game.mode = data.mode;
   scores.clear();
-  for (const r of rows) scores.set(r.id, { name: r.name, kills: r.kills, deaths: r.deaths, team: r.team || (lobby.players.get(r.id)?.team) || 'blue' });
+  for (const r of rows) scores.set(r.id, { name: r.name, kills: r.kills, deaths: r.deaths });
   refreshScoreHud();
 }
 function sortedScores() { return [...scores.entries()].sort((a, b) => b[1].kills - a[1].kills || a[1].deaths - b[1].deaths); }
 function refreshScoreHud() {
   if (!online()) return;
-  if (game.mode === 'tdm') {
-    hud.setTdmScore(true, teamKills.blue, teamKills.red, TDM_TARGET);
-    hud.setPvpScore(null);
-  } else {
-    hud.setTdmScore(false, 0, 0, 0);
-    const rows = sortedScores(); const top = rows.slice(0, 3); const myIdx = rows.findIndex(([id]) => id === net.id);
-    if (myIdx >= 3) top.push(rows[myIdx]);
-    hud.setPvpScore(top.map(([id, sc]) => `<div class="row${id === net.id ? ' me' : ''}"><span class="rank">${rows.findIndex(([x]) => x === id) + 1}.</span><span>${esc(sc.name)}${id === net.id ? ' (Tú)' : ''}</span><b>${sc.kills}</b></div>`).join('') + `<div class="target">Primero a ${FFA_TARGET} bajas</div>`);
-  }
+  hud.setTdmScore(false, 0, 0, 0);
+  const rows = sortedScores(); const top = rows.slice(0, 3); const myIdx = rows.findIndex(([id]) => id === net.id);
+  if (myIdx >= 3) top.push(rows[myIdx]);
+  hud.setPvpScore(top.map(([id, sc]) => `<div class="row${id === net.id ? ' me' : ''}"><span class="rank">${rows.findIndex(([x]) => x === id) + 1}.</span><span>${esc(sc.name)}${id === net.id ? ' (Tú)' : ''}</span><b>${sc.kills}</b></div>`).join('') + `<div class="target">Primero a ${FFA_TARGET} bajas</div>`);
   hud.setModifier('');
   if (!hud.el.board.hidden) hud.setBoard(boardHTML());
 }
 function boardHTML(title) {
-  if (game.mode === 'tdm') {
-    const bluePlayers = [], redPlayers = [];
-    for (const [id, s] of scores) {
-      const tm = s.team || lobby.players.get(id)?.team || 'blue';
-      if (tm === 'red') redPlayers.push({ id, s });
-      else bluePlayers.push({ id, s });
-    }
-    bluePlayers.sort((a, b) => b.s.kills - a.s.kills);
-    redPlayers.sort((a, b) => b.s.kills - a.s.kills);
-    return `<h3>Duelo por Equipos</h3>
-      <div class="team-split">
-        <div class="team-col blue">
-          <div class="team-name blue">EQUIPO CIAN · ${teamKills.blue}</div>
-          ${bluePlayers.map(({ id, s }) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}${id === net.id ? ' (Tú)' : ''}</span><span>${s.kills}B / ${s.deaths}M</span></div>`).join('')}
-        </div>
-        <div class="team-col red">
-          <div class="team-name red">EQUIPO MAGENTA · ${teamKills.red}</div>
-          ${redPlayers.map(({ id, s }) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}${id === net.id ? ' (Tú)' : ''}</span><span>${s.kills}B / ${s.deaths}M</span></div>`).join('')}
-        </div>
-      </div>
-      <div class="foot">Objetivo: ${TDM_TARGET} bajas · Quedan ${mmss(matchLeft)} · Sala ${String(net.aliasCode || net.code || '').replace(/-\d+$/, '')}</div>`;
-  }
   const rows = sortedScores();
-  return `<h3>${title || 'Todos contra todos'}</h3>${rows.map(([id, s]) => `<div class="${id === net.id ? 'me' : ''}"><span>${s.name}${id === net.id ? ' (Tú)' : ''}</span><span>${s.kills} bajas · ${s.deaths} muertes</span></div>`).join('')}<div class="foot">Primero a ${FFA_TARGET} bajas · Quedan ${mmss(matchLeft)} · Sala ${String(net.aliasCode || net.code || '').replace(/-\d+$/, '')}</div>`;
+  return `<h3>${title || 'Todos contra todos'}</h3>${rows.map(([id, s]) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}${id === net.id ? ' (Tú)' : ''}</span><span>${s.kills} bajas · ${s.deaths} muertes</span></div>`).join('')}<div class="foot">Primero a ${FFA_TARGET} bajas · Quedan ${mmss(matchLeft)} · Sala ${String(net.aliasCode || net.code || '').replace(/-\d+$/, '')}</div>`;
 }
 function checkWin() {
   if (!net.isHost || !online() || game.over) return;
-  if (game.mode === 'tdm') {
-    let winnerTeam = null;
-    if (teamKills.blue >= TDM_TARGET) winnerTeam = 'blue';
-    else if (teamKills.red >= TDM_TARGET) winnerTeam = 'red';
-    if (winnerTeam) {
-      const winner = { isTeam: true, team: winnerTeam, name: winnerTeam === 'blue' ? 'Equipo Cian' : 'Equipo Magenta' };
-      net.send('end', winner); endMatch(winner);
-    }
-    return;
-  }
   let winner = null;
   for (const [id, s] of scores) if (s.kills >= FFA_TARGET) winner = { id, name: s.name };
   if (winner) { net.send('end', winner); endMatch(winner); }
 }
 function endMatch(winner) {
   game.over = winner; game.overT = 0; game.state = 'over'; endFocus(); input.exitLock(); hud.setBoard(null);
-  let title = '';
-  if (winner && winner.isTeam) {
-    title = winner.team === myTeam ? `¡Victoria del ${winner.name}!` : `¡${winner.name} ha ganado!`;
-  } else {
-    title = (winner && winner.id === net.id) ? '¡Has ganado!' : ((winner && winner.name) || 'Alguien') + ' ha ganado';
-  }
+  const title = (winner && winner.id === net.id) ? '¡Has ganado!' : ((winner && winner.name) || 'Alguien') + ' ha ganado';
   hud.setGameplayVisible(false);
-  const content = (game.mode === 'tdm') ? boardHTML() : `<div class="scoreboard">${sortedScores().map(([id, s]) => `<div class="${id === net.id ? 'me' : ''}"><span>${s.name}</span><span>${s.kills} bajas · ${s.deaths} muertes</span></div>`).join('')}</div>`;
+  const content = `<div class="scoreboard">${sortedScores().map(([id, s]) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}</span><span>${s.kills} bajas · ${s.deaths} muertes</span></div>`).join('')}</div>`;
   hud.showScreen(`<h1>${title}</h1>${content}<div class="go" id="overGo">Volviendo a la sala…</div>`);
 }
 
 // ---------------- networking ----------------
-function addRemote(id, name, team = 'red') {
+function addRemote(id, name) {
   if (remote.has(id)) {
     const r = remote.get(id);
     r.name = name;
-    if (team) r.setTeam(team, team === 'blue' ? INK.CYAN : INK.MAGENTA);
     return r;
   }
-  const ink = team === 'blue' ? INK.CYAN : INK.MAGENTA;
-  const rp = new RemotePlayer(ctx, id, name, team, ink);
-  rp.setTeam(team, ink);
+  const rp = new RemotePlayer(ctx, id, name, 'red', INK.MAGENTA);
   rp.onDamage = (t, amount, fromPos) => { if (!ctx.canHurt(t) || !t.alive) return; hud.hitmarker(false, false); net.sendTo(t.id, 'pdmg', { amount: Math.round(amount), from: fromPos ? fromPos.toArray().map((v) => +v.toFixed(1)) : null, by: net.id, src: 'grenade' }); };
   remote.set(id, rp); return rp;
 }
@@ -621,43 +549,33 @@ function removeRemote(id) { const r = remote.get(id); if (r) { r.dispose(); remo
 function lobbyRows() {
   const map = new Map(lobby.players);
   if (net.id && !map.has(net.id)) {
-    map.set(net.id, { name: myName, team: myTeam });
+    map.set(net.id, { name: myName });
   }
-  return [...map.entries()].map(([id, p]) => ({ id, name: p.name || 'Garabato', team: p.team || 'blue' }));
+  return [...map.entries()].map(([id, p]) => ({ id, name: p.name || 'Garabato' }));
 }
 net.getLobbyInfo = () => ({
   players: lobbyRows(),
   hostId: net.id,
   map: lobby.map || mapKey,
-  gameMode: lobby.gameMode || 'ffa'
+  gameMode: 'ffa'
 });
 net.onAdopt = (hostId, welcome) => {
   if (welcome && welcome.lobby) {
     const d = welcome.lobby;
     lobby.hostId = d.hostId || hostId;
     if (d.map) lobby.map = knownMap(d.map);
-    if (d.gameMode) lobby.gameMode = d.gameMode;
+    lobby.gameMode = 'ffa';
     if (d.players && Array.isArray(d.players)) {
       for (const p of d.players) {
-        lobby.players.set(p.id, { name: p.name, team: p.team || 'blue' });
+        lobby.players.set(p.id, { name: p.name });
       }
     }
   }
-  lobby.players.set(net.id, { name: myName, team: myTeam });
-  net.send('join_info', { name: myName, team: myTeam });
+  lobby.players.set(net.id, { name: myName });
+  net.send('join_info', { name: myName });
   renderLobby();
 };
-function broadcastLobby() { net.send('lobby', { players: lobbyRows(), hostId: net.id, isPublic: lobby.isPublic, map: lobby.map || mapKey, gameMode: lobby.gameMode || 'ffa', shown: net.aliasCode || net.code }); renderLobby(); }
-function setLocalTeam(team) {
-  myTeam = team;
-  player.setTeam(team);
-  const lp = lobby.players.get(net.id);
-  if (lp) lp.team = team;
-  if (net.isHost) broadcastLobby();
-  else net.send('setteam', { team });
-  renderLobby();
-}
-const setMyTeam = setLocalTeam;
+function broadcastLobby() { net.send('lobby', { players: lobbyRows(), hostId: net.id, isPublic: lobby.isPublic, map: lobby.map || mapKey, gameMode: 'ffa', shown: net.aliasCode || net.code }); renderLobby(); }
 const inMatch = () => ['play', 'dying', 'over'].includes(game.state);
 net.onPeerLeave = (id) => {
   const nm = (lobby.players.get(id) || {}).name;
@@ -684,7 +602,7 @@ async function _migrateHost() {
     let ok = false;
     for (let tries = 0; tries < 2 && !ok; tries++) { try { await net.host({ isPublic: lobby.isPublic, code }); ok = true; } catch (e) { await sleep(800); } }
     if (!ok) { leaveOnline('No se pudo tomar el control de la sala'); return; }
-    const mine = lobby.players.get(myId) || { name: myName, team: myTeam }; lobby.players.delete(myId); lobby.players.set(net.id, mine);
+    const mine = lobby.players.get(myId) || { name: myName }; lobby.players.delete(myId); lobby.players.set(net.id, mine);
     const ms = scores.get(myId); scores.delete(myId); if (ms) scores.set(net.id, ms);
     lobby.hostId = net.id; lobby.code = code; lobby.order = [net.id, ...roster.filter((id) => id !== myId)]; net.accepting = true; game.clockStarted = clockRunning || matchLeft < FFA_TIME;
     net.onAlias = () => { broadcastLobby(); hud.kill('Código de sala ' + base + ' restaurado', 0); }; net.claimAlias(base);
@@ -703,14 +621,11 @@ net.hostName = myName;
 net.onPeerJoin = (from, meta) => {
   const name = String(meta && meta.name || 'doodle').slice(0, 14);
   if (meta && meta.prev && meta.prev !== from) { const sc = scores.get(meta.prev); if (sc) { scores.delete(meta.prev); scores.set(from, sc); } const r = remote.get(meta.prev); if (r) r.dispose(); remote.delete(meta.prev); lobby.players.delete(meta.prev); if (lobby.order) lobby.order = lobby.order.filter((id) => id !== meta.prev); }
-  let bCount = (myTeam === 'blue' ? 1 : 0), rCount = (myTeam === 'red' ? 1 : 0);
-  for (const [id, p] of lobby.players) { if (p.team === 'red') rCount++; else bCount++; }
-  const team = (bCount <= rCount) ? 'blue' : 'red';
   const isNew = !lobby.players.has(from);
-  lobby.players.set(from, { name, team }); addRemote(from, name, team); broadcastLobby();
+  lobby.players.set(from, { name }); addRemote(from, name); broadcastLobby();
   if (game.state === 'play' || game.state === 'dying') {
-    if (!scores.has(from)) scores.set(from, { name, kills: 0, deaths: 0, team });
-    net.sendTo(from, 'start', { late: true, spawn: farthestSpawnIndex(), map: lobby.map || mapKey, gameMode: lobby.gameMode || game.mode, broken: level.breakables.filter((b) => !b.alive).map((b) => b.id) });
+    if (!scores.has(from)) scores.set(from, { name, kills: 0, deaths: 0 });
+    net.sendTo(from, 'start', { late: true, spawn: farthestSpawnIndex(), map: lobby.map || mapKey, gameMode: 'ffa', broken: level.breakables.filter((b) => !b.alive).map((b) => b.id) });
     sendScores();
     hud.kill(name + ' se unió', 0);
   } else if (isNew) {
@@ -721,10 +636,9 @@ net.onPeerJoin = (from, meta) => {
 net.on('join_info', (d, from) => {
   if (!net.isHost) return;
   const name = String(d && d.name || 'doodle').slice(0, 14);
-  const team = (d && d.team === 'red') ? 'red' : 'blue';
   const isNew = !lobby.players.has(from);
-  lobby.players.set(from, { name, team });
-  addRemote(from, name, team);
+  lobby.players.set(from, { name });
+  addRemote(from, name);
   broadcastLobby();
   renderLobby();
   if (isNew) {
@@ -735,7 +649,8 @@ net.on('join_info', (d, from) => {
 net.on('lobby', (d) => {
   lobby.hostId = d.hostId; lobby.isPublic = !!d.isPublic; lobby.code = net.code; lobby.shown = d.shown || net.code;
   if (d.map) lobby.map = knownMap(d.map);
-  if (d.gameMode) { lobby.gameMode = d.gameMode; if (inMatch()) game.mode = d.gameMode; }
+  lobby.gameMode = 'ffa';
+  if (inMatch()) game.mode = 'ffa';
   lobby.order = d.players.map((p) => p.id);
 
   for (const p of d.players) {
@@ -747,21 +662,19 @@ net.on('lobby', (d) => {
 
   lobby.players.clear();
   for (const p of d.players) {
-    lobby.players.set(p.id, { name: p.name, team: p.team || 'blue' });
-    if (p.id === net.id && p.team) { myTeam = p.team; player.setTeam(myTeam); }
+    lobby.players.set(p.id, { name: p.name });
   }
   for (const p of d.players) {
     if (p.id !== net.id) {
       const r = remote.get(p.id);
-      if (r) { r.name = p.name; r.setTeam(p.team || 'red'); }
-      else addRemote(p.id, p.name, p.team || 'red');
+      if (r) { r.name = p.name; }
+      else addRemote(p.id, p.name);
     }
   }
   for (const id of [...remote.keys()]) if (!lobby.players.has(id)) removeRemote(id);
   if (inMatch()) {
     for (const p of d.players) {
-      if (!scores.has(p.id)) scores.set(p.id, { name: p.name, kills: 0, deaths: 0, team: p.team || 'blue' });
-      else scores.get(p.id).team = p.team || 'blue';
+      if (!scores.has(p.id)) scores.set(p.id, { name: p.name, kills: 0, deaths: 0 });
     }
     refreshScoreHud();
   }
@@ -774,14 +687,6 @@ net.on('setname', (d, from) => {
     p.name = String(d.name).slice(0, 14);
     const r = remote.get(from);
     if (r) r.name = p.name;
-    broadcastLobby();
-  }
-});
-net.on('setteam', (d, from) => {
-  if (!net.isHost) return;
-  const p = lobby.players.get(from);
-  if (p && (d.team === 'blue' || d.team === 'red')) {
-    p.team = d.team;
     broadcastLobby();
   }
 });
@@ -821,12 +726,6 @@ net.on('take', (d) => { if (!net.isHost) return; const p = pickups.find((x) => x
 net.on('ps', (d, from) => { const r = remote.get(from); if (r) { r.push(d, performance.now() / 1000); r.lastSeen = performance.now(); } });
 net.on('pdmg', (d) => {
   if (!player.alive || game.state !== 'play' || player.shieldT > 0) return;
-  if (d.by) {
-    const attacker = remote.get(d.by);
-    const attackerTeam = attacker ? (attacker.team || 'blue') : (scores.get(d.by)?.team || lobby.players.get(d.by)?.team || 'blue');
-    const myT = player.team || myTeam || 'blue';
-    if (attackerTeam && myT && attackerTeam === myT) return; // Discard friendly fire packets completely
-  }
   player.lastHitBy = d.by || null; player.lastHit = { from: d.from || null, crit: !!d.crit, amount: d.amount, src: d.src };
   player.takeDamage(d.amount, d.from ? new THREE.Vector3().fromArray(d.from) : null);
 });
@@ -845,7 +744,7 @@ net.on('shots', (d, from) => {
   const r = remote.get(from); if (!r || !r.root || !r.alive) return;
   _sm.set(r.body.pos.x + r.right.x * 0.3 + r.forward.x * 0.8, r.body.pos.y + 1.35 + r.forward.y * 0.8, r.body.pos.z + r.right.z * 0.3 + r.forward.z * 0.8);
   const th = TRACER_THICK[d.k] || 0.02; const e = d.e || [];
-  const tracerInk = (r.team === 'red' || r.ink === INK.RED) ? INK.RED : INK.BLUE;
+  const tracerInk = (r.ink === INK.RED || r.ink === INK.MAGENTA) ? INK.RED : INK.BLUE;
   for (let i = 0; i + 2 < e.length; i += 3) { _se.set(e[i], e[i + 1], e[i + 2]); effects.tracer(_sm, _se, tracerInk, th, 0.06); }
   r.flash(); audio.remoteShot(d.k, _sm);
 });
@@ -903,7 +802,7 @@ async function createLobby(isPublic) {
   setStatus('Creando sala…');
   try { await net.host({ isPublic }); }
   catch (err) { setStatus(friendlyError(err)); unlockButtons(); return; }
-  lobby.isPublic = isPublic; lobby.map = mapKey; lobby.gameMode = lobby.gameMode || 'tdm'; lobby.players.clear(); lobby.players.set(net.id, { name: myName, team: myTeam }); lobby.hostId = net.id; lobby.status = '';
+  lobby.isPublic = isPublic; lobby.map = mapKey; lobby.gameMode = 'ffa'; lobby.players.clear(); lobby.players.set(net.id, { name: myName }); lobby.hostId = net.id; lobby.status = '';
   const code = String(net.aliasCode || net.code || '').replace(/-\d+$/, '');
   if (code) history.replaceState(null, '', '?room=' + code);
   game.state = 'lobby'; screen = 'lobby'; showStart();
@@ -1065,9 +964,8 @@ function onlineHTML() {
 }
 function lobbyHTML() {
   const rows = lobbyRows(); const host = net.isHost; const n = rows.length;
-  const isTdm = (lobby.gameMode === 'tdm');
   const code = String(net.isHost ? (net.aliasCode || net.code) : (lobby.shown || net.code) || '').replace(/-\d+$/, '');
-  return `<h1>Sala de Espera</h1><h2>${isTdm ? 'Duelo por Equipos · Primero a ' + TDM_TARGET + ' bajas' : 'Todos contra todos · Primero a ' + FFA_TARGET + ' bajas'}</h2>
+  return `<h1>Sala de Espera</h1><h2>Todos contra todos · Primero a ${FFA_TARGET} bajas</h2>
     <div class="online" id="online">
       <div class="row room-code-row">
         <span>Código de Sala:</span><span class="code">${code}</span>
@@ -1084,11 +982,9 @@ function lobbyHTML() {
           ${rows.map((p) => {
             const isHost = (p.id === lobby.hostId);
             const isMe = (p.id === net.id);
-            const tm = p.team === 'red' ? 'red' : 'blue';
-            const tmName = p.team === 'red' ? 'Equipo Magenta' : 'Equipo Cian';
             return `
-              <div class="room-player-card ${tm}${isMe ? ' me' : ''}${isHost ? ' is-host' : ''}">
-                <div class="rpc-avatar ${tm}">
+              <div class="room-player-card${isMe ? ' me' : ''}${isHost ? ' is-host' : ''}">
+                <div class="rpc-avatar">
                   <span class="rpc-icon">${isHost ? '👑' : '✏️'}</span>
                 </div>
                 <div class="rpc-info">
@@ -1098,7 +994,6 @@ function lobbyHTML() {
                     ${isHost ? '<span class="rpc-tag host-tag">Anfitrión</span>' : ''}
                   </div>
                   <div class="rpc-meta">
-                    <span class="rpc-team-pill ${tm}">${tmName}</span>
                     <span class="rpc-status">● En la sala</span>
                   </div>
                 </div>
@@ -1108,20 +1003,11 @@ function lobbyHTML() {
         </div>
       </div>
 
-      <div class="row teampick">
+      <div class="row">
         <span>Tu apodo:</span>
         <input type="text" class="namebox" id="setName" maxlength="14" value="${esc(myName)}">
-        <span style="margin-left: 10px;">${isTdm ? 'Tu Equipo:' : 'Tu Color / Equipo:'}</span>
-        <div class="teambtns">
-          <button type="button" class="teambtn blue${myTeam === 'blue' ? ' on' : ''}" data-team="blue">Equipo Cian</button>
-          <button type="button" class="teambtn red${myTeam === 'red' ? ' on' : ''}" data-team="red">Equipo Magenta</button>
-        </div>
       </div>
 
-      <div class="modes">
-        <button type="button" class="modebtn${!isTdm ? ' on' : ''}" data-mode="ffa" ${host ? '' : 'disabled'}>Todos contra todos<i>FFA · Sin equipos</i></button>
-        <button type="button" class="modebtn${isTdm ? ' on' : ''}" data-mode="tdm" ${host ? '' : 'disabled'}>Duelo por Equipos<i>TDM · Cian vs Magenta</i></button>
-      </div>
       ${mapHTML(lobby.map || mapKey, host)}
       <div class="hint">${lobby.isPublic ? 'Esta sala es pública: cualquiera puede unirse por partida rápida, código o enlace directo' : 'Sala privada: comparte el código o enlace directo con tus amigos'}</div>
       <div class="row"><button type="button" class="big" id="startBtn">Comenzar partida</button><button type="button" class="alt" id="leaveBtn">Salir de la sala</button></div>
@@ -1160,19 +1046,7 @@ function wireOnline() {
       });
     });
   }
-  box.querySelectorAll('.modebtn').forEach((b) => {
-    b.addEventListener('click', (e) => {
-      e.stopPropagation(); if (!net.isHost) return;
-      lobby.gameMode = b.dataset.mode; broadcastLobby(); renderLobby();
-    });
-  });
-  box.querySelectorAll('.teambtn').forEach((b) => {
-    b.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const t = b.dataset.team;
-      if (t === 'blue' || t === 'red') setMyTeam(t);
-    });
-  });
+
   if (q('quickBtn')) q('quickBtn').addEventListener('click', () => { lockButtons(box); quickPlay(); });
   if (q('createBtn')) q('createBtn').addEventListener('click', () => {
     lockButtons(box);
@@ -1226,9 +1100,8 @@ function showPause() {
   const secs = Math.floor(game.time % 60);
   const timeStr = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
   if (online()) {
-    const isTdm = (game.mode === 'tdm');
-    const title = isTdm ? 'Duelo por Equipos' : 'Todos contra todos';
-    const content = isTdm ? boardHTML() : `<div class="scoreboard">${sortedScores().map(([id, s]) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}</span><span>${s.kills} bajas · ${s.deaths} muertes</span></div>`).join('')}</div>`;
+    const title = 'Todos contra todos';
+    const content = `<div class="scoreboard">${sortedScores().map(([id, s]) => `<div class="${id === net.id ? 'me' : ''}"><span>${esc(s.name)}${id === net.id ? ' (Tú)' : ''}</span><span>${s.kills} bajas · ${s.deaths} muertes</span></div>`).join('')}</div>`;
     hud.showScreen(`
       <div class="pause-modal">
         <div class="pause-header">
@@ -1291,7 +1164,7 @@ function showPause() {
   `);
   wireSettings(); wireControlsTabs(); wireMenuBtn();
 }
-function showClickToPlay() { hud.showScreen(`<h1>Partida iniciada</h1><h2>${game.mode === 'tdm' ? 'Duelo por Equipos · Primero a ' + TDM_TARGET + ' bajas' : 'Todos contra todos · Primero a ' + FFA_TARGET + ' bajas'}</h2><div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para entrar al combate</div>`); }
+function showClickToPlay() { hud.showScreen(`<h1>Partida iniciada</h1><h2>Todos contra todos · Primero a ${FFA_TARGET} bajas</h2><div class="go">Haz clic en cualquier lugar (o pulsa ${hud.key('confirm')}) para entrar al combate</div>`); }
 function showDead() {
   hud.setGameplayVisible(false); const nb = game.score > best; if (nb) { best = game.score; localStorage.setItem('doodle_best', String(best)); }
   hud.showScreen(`<h1>Borrado</h1><div class="stats">Sobreviviste a <b>${game.wave}</b> oleadas · <b>${game.kills}</b> bajas · Puntos <b>${game.score}</b>${nb ? ' · <b>¡Nuevo récord!</b>' : ` · Récord ${best}`}</div>${checkpointHTML()}${menuBtnHTML()}<div class="go">Haz clic (o pulsa ${hud.key('confirm')}) para volver a dibujar</div>`);
@@ -1332,7 +1205,7 @@ function resetGame() {
   if (level.breakables.some((b) => !b.alive)) setLevel(loadedKey, arenaLoaded, true);
   enemies.clear(); effects.clear(); for (const p of pickups) R.scene.remove(p.mesh); pickups.length = 0; pickupClock = 0;
   player.maxHp = online() ? 110 : 120; player.regenDelay = online() ? 4 : 4.5; player.regenRate = online() ? 14 : 11;
-  player.reset(level.playerStart); player.name = myName; player.setTeam(myTeam); player.lastHitBy = null; player.lastHit = null; enemies.mods.speed = 1; enemies.mods.damage = 1; hud.setModifier(''); hud.setBoss(null, null); game.boss = null; endFocus(); game.katanaStreak = 0;
+  player.reset(level.playerStart); player.name = myName; player.lastHitBy = null; player.lastHit = null; enemies.mods.speed = 1; enemies.mods.damage = 1; hud.setModifier(''); hud.setBoss(null, null); game.boss = null; endFocus(); game.katanaStreak = 0;
   game.score = 0; game.kills = 0; game.combo = 0; game.wave = 0; game.intermission = 0; game.queue = []; game.time = 0; game.over = null; game.matchT = 0; hud.setScore(0, 0); hud.setTimer(''); hud.setPvpScore(null); hud.setTdmScore(false, 0, 0, 0); hud.setWave(1, 0); hud.setBoard(null);
 }
 function beginCommon() { audio.init(); audio.resume(); if (!input.usingGamepad) input.requestLock(); if (musicWanted && !audio.musicPlaying) audio.musicOn(true); hud.hideScreen(); hud.setGameplayVisible(true); game.menu = false; }
@@ -1359,13 +1232,8 @@ function beginAtWave(n) {
 }
 function jumpToWave(n) { enemies.clear(); effects.clear(); enemies.mods.speed = 1; enemies.mods.damage = 1; endFocus(); game.intermission = 0; game.queue = []; startWave(n); hud.hideScreen(); hud.setGameplayVisible(true); game.state = 'play'; game.menu = false; audio.reelLoop(false); }
 function hostStart() {
-  if (lobby.gameMode === 'tdm') {
-    let bCount = 0, rCount = 0;
-    for (const [id, p] of lobby.players) { if (p.team === 'red') rCount++; else bCount++; }
-    teamKills.blue = 0; teamKills.red = 0;
-  }
   scores.clear();
-  for (const [id, p] of lobby.players) scores.set(id, { name: p.name, kills: 0, deaths: 0, team: p.team || 'blue' });
+  for (const [id, p] of lobby.players) scores.set(id, { name: p.name, kills: 0, deaths: 0 });
 
   if (!userExplicitlyPickedMap) {
     const nextKey = getNextRotatedMapKey();
@@ -1377,34 +1245,22 @@ function hostStart() {
 
   setArena(true); const order = spawnSpots().map((_, i) => i); for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
   const spawns = {}; [...lobby.players.keys()].forEach((id, i) => { spawns[id] = order[i % order.length]; });
-  net.send('start', { spawns, map: lobby.map || mapKey, gameMode: lobby.gameMode || 'ffa' });
-  startMatch(false, spawns[net.id], lobby.gameMode || 'ffa');
+  net.send('start', { spawns, map: lobby.map || mapKey, gameMode: 'ffa' });
+  startMatch(false, spawns[net.id], 'ffa');
   sendScores();
 }
-function startMatch(late, spawnIdx, mode = lobby.gameMode || 'ffa') {
-  net.inMatch = true; game.mode = mode; setArena(true); resetGame(); matchLeft = FFA_TIME; clockT = 0; game.clockStarted = false;
+function startMatch(late, spawnIdx, mode = 'ffa') {
+  net.inMatch = true; game.mode = 'ffa'; setArena(true); resetGame(); matchLeft = FFA_TIME; clockT = 0; game.clockStarted = false;
   mapRotationTimer = MAP_ROTATION_INTERVAL; mapWarn15 = false; mapWarn5 = false;
-  if (game.mode === 'tdm') {
-    teamKills.blue = 0; teamKills.red = 0;
-    const myLobby = lobby.players.get(net.id);
-    if (myLobby && myLobby.team) myTeam = myLobby.team;
-  }
-  player.setTeam(myTeam);
   // nobody sends snapshots in the lobby, so the silence clock restarts here or the sweep would drop everyone
   for (const r of remote.values()) {
     r.lastSeen = performance.now();
-    const lp = lobby.players.get(r.id);
-    if (lp && lp.team) r.setTeam(lp.team, lp.team === 'blue' ? INK.BLUE : INK.RED);
   }
-  if (!scores.size) for (const [id, p] of lobby.players) scores.set(id, { name: p.name, kills: 0, deaths: 0, team: p.team || 'blue' });
-  const spots = (game.mode === 'tdm' && level.teamSpawns && level.teamSpawns[myTeam]) ? level.teamSpawns[myTeam] : spawnSpots();
+  if (!scores.size) for (const [id, p] of lobby.players) scores.set(id, { name: p.name, kills: 0, deaths: 0 });
+  const spots = spawnSpots();
   player.reset(spawnIdx != null && spots[spawnIdx] ? spots[spawnIdx].clone() : arenaSpawn()); beginCommon(); game.state = 'play'; screen = 'lobby'; player.shieldT = 2;
   refreshScoreHud();
-  if (game.mode === 'tdm') {
-    hud.message('Duelo por Equipos', 'Equipo ' + (myTeam === 'blue' ? 'Cian' : 'Magenta') + ' · Objetivo: ' + TDM_TARGET + ' bajas', 3.5);
-  } else {
-    hud.message('Todos contra todos', late ? 'Te uniste a una partida en curso' : 'Primero a ' + FFA_TARGET + ' bajas · ' + Math.round(FFA_TIME / 60) + ' minutos · Todos son enemigos', 3);
-  }
+  hud.message('Todos contra todos', late ? 'Te uniste a una partida en curso' : 'Primero a ' + FFA_TARGET + ' bajas · ' + Math.round(FFA_TIME / 60) + ' minutos · Todos son enemigos', 3);
   hud.tip(`Mantén pulsado <b>${hud.key('score')}</b> para ver el marcador`, 5);
   // a match started by someone else's click cannot grab the mouse: ask for a click
   setTimeout(() => { if (game.state === 'play' && !input.pointerLocked && !input.usingGamepad) { game.menu = true; showClickToPlay(); } }, 250);

@@ -169,8 +169,7 @@ export class HUD {
         this._nameTags.set(rp.id, el);
       }
 
-      const teamColor = (rp.team === 'red' || rp.ink === 1) ? 'red' : 'blue';
-      el.className = `nametag team-${teamColor}${hit ? ' occluded' : ''}`;
+      el.className = `nametag team-red${hit ? ' occluded' : ''}`;
 
       const nameEl = el.querySelector('.nt-name');
       if (nameEl && nameEl.textContent !== rp.name) nameEl.textContent = rp.name || 'Garabato';

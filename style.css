@@ -1072,16 +1072,18 @@ canvas#c { position: fixed; inset: 0; width: 100vw; height: 100vh; display: bloc
   align-items: center;
   gap: 12px;
   background: rgba(10, 22, 44, 0.7);
-  border: 1px solid var(--cyan);
+  border: 1px solid rgba(0, 240, 255, 0.4);
   border-radius: 6px;
-  padding: 6px 12px;
+  padding: 8px 14px;
   transition: all 0.15s ease;
 }
-.room-player-card.red {
-  border-color: var(--magenta);
-  background: rgba(44, 10, 26, 0.7);
+.room-player-card.me {
+  border-color: var(--cyan);
+  box-shadow: 0 0 14px rgba(0, 240, 255, 0.4);
 }
-.room-player-card.me { box-shadow: 0 0 14px currentColor; }
+.room-player-card.is-host {
+  border-color: rgba(255, 170, 0, 0.6);
+}
 .rpc-avatar {
   width: 34px;
   height: 34px;
@@ -1090,40 +1092,20 @@ canvas#c { position: fixed; inset: 0; width: 100vw; height: 100vh; display: bloc
   align-items: center;
   justify-content: center;
   font-size: 16px;
-  border: 1.5px solid currentColor;
+  border: 1.5px solid var(--cyan);
   background: rgba(6, 12, 24, 0.9);
+  color: var(--cyan);
 }
-.rpc-avatar.blue { color: var(--cyan); }
-.rpc-avatar.red { color: var(--magenta); }
+.room-player-card.is-host .rpc-avatar {
+  border-color: var(--amber);
+  color: var(--amber);
+}
 .rpc-info { flex: 1; display: flex; flex-direction: column; gap: 2px; text-align: left; }
 .rpc-name { font-size: 18px; font-weight: bold; color: #fff; }
-.room-player-card.red .rpc-name { color: #ffe6f2; }
 .rpc-tag { font-size: 11px; font-weight: bold; padding: 1px 6px; border-radius: 3px; text-transform: uppercase; margin-left: 6px; }
 .rpc-tag.me-tag { background: var(--cyan); color: #040711; }
 .rpc-tag.host-tag { background: var(--amber); color: #040711; }
-.rpc-team-pill { font-size: 12px; padding: 1px 6px; border-radius: 3px; border: 1px solid currentColor; }
-.rpc-team-pill.blue { color: var(--cyan); }
-.rpc-team-pill.red { color: var(--magenta); }
-.rpc-status { font-size: 12px; color: var(--green); margin-left: 8px; }
-
-/* ---- Team Selection Buttons ---- */
-.teambtns { display: flex; gap: 12px; justify-content: center; margin: 8px 0; }
-.teambtn {
-  font: inherit;
-  font-size: 19px;
-  font-weight: bold;
-  border: 1.5px solid var(--cyan);
-  border-radius: 6px;
-  padding: 6px 18px;
-  cursor: pointer;
-  background: transparent;
-  color: var(--cyan);
-  text-shadow: 0 0 8px var(--cyan);
-  transition: all 0.15s ease;
-}
-.teambtn.blue.on { background: rgba(0, 240, 255, 0.25); box-shadow: 0 0 16px var(--cyan); color: #fff; }
-.teambtn.red { border-color: var(--magenta); color: var(--magenta); text-shadow: 0 0 8px var(--magenta); }
-.teambtn.red.on { background: rgba(255, 0, 127, 0.25); box-shadow: 0 0 16px var(--magenta); color: #fff; }
+.rpc-status { font-size: 12px; color: var(--green); }
 
 /* ---- TDM Scoreboard Header (HUD) ---- */
 .tdm-header {
